@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Задача 1 — загрузка аудио (GitHub Pages + Render)</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px;}
+    .wrap{max-width:900px;margin:0 auto;}
+    .card{background:#fff;border-radius:10px;padding:16px 18px;margin-top:12px;}
+    input,button{font-size:14px;}
+    button{padding:10px 14px;cursor:pointer;}
+    .mono{font-family:"Courier New",monospace;white-space:pre-wrap;word-break:break-word;}
+    .small{color:#666;font-size:13px;line-height:1.4;}
+    label{display:block;margin-top:10px;}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h2 style="margin:0;">Загрузка аудио → орфография + фонемы</h2>
+    <div class="small">
+      Этот сайт (GitHub Pages) — только интерфейс. Обработка идёт на сервере Render.<br>
+      На бесплатном Render сервер может “спать”: первая обработка после простоя может занять 20–60 секунд.
+    </div>
+  </div>
+
+  <div class="card">
+    <label class="small">URL твоего Render backend (пример: https://xxxxx.onrender.com)</label>
+    <input id="backendUrl" style="width:100%;padding:8px;" placeholder="https://xxxxx.onrender.com" />
+
+    <label class="small">Аудиофайл (лучше короткий: 10–30 сек)</label>
+    <input id="file" type="file" accept="audio/*" />
+
+    <div style="margin-top:10px;">
+      <button id="go">Обработать</button>
+      <span id="status" class="small" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Орфографическая запись (speech-to-text)</h3>
+    <div id="ortho"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Фонетика / фонемы (по словам)</h3>
+    <div id="phon" class="mono"></div>
+    <div id="note" class="small" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<script>
+const backendInput = document.getElementById('backendUrl');
+const saved = localStorage.getItem('backendUrl');
+if (saved) backendInput.value = saved;
+
+const statusEl = document.getElementById('status');
+const orthoEl = document.getElementById('ortho');
+const phonEl = document.getElementById('phon');
+const noteEl = document.getElementById('note');
+
+document.getElementById('go').onclick = async () => {
+  const url = backendInput.value.trim().replace(/\/+$/,'');
+  if (!url) { alert('Вставь URL backend на Render'); return; }
+  localStorage.setItem('backendUrl', url);
+
+  const f = document.getElementById('file').files[0];
+  if (!f) { alert('Выбери аудиофайл'); return; }
+
+  statusEl.textContent = 'Отправляю и обрабатываю...';
+  orthoEl.textContent = '';
+  phonEl.textContent = '';
+  noteEl.textContent = '';
+
+  const fd = new FormData();
+  fd.append('file', f);
+
+  try {
+    const r = await fetch(url + '/api/process', { method:'POST', body: fd });
+    const j = await r.json();
+
+    if (!j.ok) {
+      statusEl.textContent = 'Ошибка';
+      alert('Ошибка: ' + (j.error || 'неизвестно') + (j.details ? ('\n\n' + j.details) : ''));
+      return;
+    }
+
+    statusEl.textContent = 'Готово';
+    orthoEl.textContent = j.orthography;
+    phonEl.textContent = j.phonetics;
+    noteEl.textContent = j.note || '';
+  } catch(e) {
+    statusEl.textContent = 'Ошибка соединения';
+    alert('Не удалось связаться с сервером. Если Render “спал”, подожди и попробуй ещё раз.\n\n' + e);
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: dialect-backend
+    env: docker
+    plan: free
+    autoDeploy: true
