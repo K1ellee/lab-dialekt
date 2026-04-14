@@ -17,16 +17,18 @@
     linksEl.textContent = "Таблица данных не подключена (используются примерные данные из проекта).";
   }
 
+  // --- ВАЖНО: убираем лого Leaflet, но оставляем OSM attribution ---
   const map = L.map('map', { attributionControl: false }).setView([57.0, 53.2], 7);
-
-  // Подложка карты (если интернет медленный, может грузиться не сразу)
+  
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
-    attribution: '&copy; OpenStreetMap'
+    // эту строку НЕ ставим, иначе Leaflet всё равно вставит свой логотип
+    // attribution: '&copy; OpenStreetMap'
   }).addTo(map);
-
-  // attribution для OpenStreetMap, без лого Leaflet
-  L.control.attribution({position:'bottomright', prefix:false}).addAttribution('&copy; OpenStreetMap').addTo(map);
+  
+  // Добавляем атрибуцию OSM вручную (без лого Leaflet)
+  L.control.attribution({ position: 'bottomright', prefix: false })
+    .addAttribution('&copy; OpenStreetMap').addTo(map);
 
   let allRows = [];
   let markers = [];
@@ -39,12 +41,11 @@
   function norm(s){ return (s||"").toString().toLowerCase(); }
 
   function parseCSV(text){
-    // простой CSV парсер (ожидаем без “сложных” кавычек)
     const lines = text.split(/\r?\n/).filter(l => l.trim().length>0);
     const header = lines[0].split(",").map(h=>h.trim());
     const rows = [];
     for (let i=1;i<lines.length;i++){
-      const cols = lines[i].split(","); // для простоты
+      const cols = lines[i].split(",");
       const obj = {};
       header.forEach((h,idx)=> obj[h]= (cols[idx]||"").trim());
       rows.push(obj);
@@ -60,7 +61,6 @@
         const t = await r.text();
         const raw = parseCSV(t);
 
-        // ожидаемые поля: region,district,settlement,lat,lon,question,unit1,unit2
         allRows = raw.map(x => ({
           region: x.region || x["регион"] || x["Region"] || "",
           district: x.district || x["район"] || x["District"] || "",
