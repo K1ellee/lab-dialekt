@@ -22,4 +22,5 @@ COPY backend/static /app/static
 ENV VOSK_MODEL_PATH=/app/models/vosk-model-small-ru-0.22
 
 # Render даёт PORT, мы его используем
-CMD gunicorn -b 0.0.0.0:${PORT:-8000} app:app
+CMD gunicorn -b 0.0.0.0:${PORT:-8000} --timeout 180 app:app
+
