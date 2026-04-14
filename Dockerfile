@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+﻿FROM python:3.11-slim
 
 # ffmpeg нужен для конвертации входного аудио (mp3/ogg/..)->wav
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg wget unzip \
@@ -16,6 +16,8 @@ RUN mkdir -p /app/models \
  && rm /tmp/model.zip
 
 COPY backend/app.py /app/app.py
+COPY backend/templates /app/templates
+COPY backend/static /app/static
 
 ENV VOSK_MODEL_PATH=/app/models/vosk-model-small-ru-0.22
 

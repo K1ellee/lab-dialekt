@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Задача 3 — карта</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="card nav">
+    <a href="/">Главная</a>
+    <a href="/task1">Задача 1</a>
+    <a href="/task3"><b>Задача 3</b></a>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0;">Задача 3 — интерактивная карта русских говоров Удмуртии</h2>
+    <div id="sheetLinks" class="small" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="small">Фильтры:</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; margin-top:10px;">
+      <div>
+        <div class="small">Вопрос</div>
+        <select id="q"></select>
+      </div>
+      <div>
+        <div class="small">Лингвистическая единица (unit1)</div>
+        <input id="unit" placeholder="например: щас">
+      </div>
+      <div>
+        <div class="small">Регион/район</div>
+        <input id="adm" placeholder="например: Удмурт">
+      </div>
+      <div>
+        <div class="small">Пункт (нас. пункт)</div>
+        <input id="sett" placeholder="например: Ижевск">
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <button id="apply">Показать</button>
+      <button id="reset">Сброс</button>
+      <span id="status" class="small" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="map"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Список результатов</h3>
+    <div id="list" class="list"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Инструкция пользователя</h3>
+    <ol class="small">
+      <li>Выбери вопрос.</li>
+      <li>Можно дополнительно ввести лингвистическую единицу (unit1), район/регион или название пункта.</li>
+      <li>Нажми “Показать” — точки отфильтруются на карте и в списке.</li>
+      <li>Клик по точке или по строке в списке показывает данные пункта.</li>
+    </ol>
+  </div>
+</div>
+
+<script src="/static/config.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/task3.js"></script>
+</body></html>
