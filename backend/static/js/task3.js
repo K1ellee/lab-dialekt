@@ -1,4 +1,4 @@
-(function(){
+﻿(function(){
   const statusEl = document.getElementById("status");
   const qEl = document.getElementById("q");
   const unitEl = document.getElementById("unit");
@@ -17,13 +17,16 @@
     linksEl.textContent = "Таблица данных не подключена (используются примерные данные из проекта).";
   }
 
-  const map = L.map('map').setView([57.0, 53.2], 7);
+  const map = L.map('map', { attributionControl: false }).setView([57.0, 53.2], 7);
 
   // Подложка карты (если интернет медленный, может грузиться не сразу)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
+
+  // attribution для OpenStreetMap, без лого Leaflet
+  L.control.attribution({position:'bottomright', prefix:false}).addAttribution('&copy; OpenStreetMap').addTo(map);
 
   let allRows = [];
   let markers = [];
