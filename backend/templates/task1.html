@@ -13,7 +13,7 @@
   </div>
 
   <div class="card">
-    <h2 style="margin:0;">Задача 1 — аудио → орфография + фонемы</h2>
+    <h2 style="margin:0;">Задача 1 — аудио → орфография + фонетика</h2>
   </div>
 
   <div class="card">
@@ -35,19 +35,22 @@
   </div>
 
   <div class="card">
-    <h3 style="margin-top:0;">Фонемы (по словам: слово(фонемы))</h3>
-    <div id="phon" class="mono"></div>
+    <h3 style="margin-top:0;">Фонетическая запись 1 (IPA, фонемы)</h3>
+    <div id="phon1" class="mono"></div>
+
+    <h3>Фонетическая запись 2 (русскими символами)</h3>
+    <div id="phon2" class="mono"></div>
+
     <div id="note" class="small" style="margin-top:10px;"></div>
-    <div id="engine" class="small" style="margin-top:10px;"></div>
   </div>
 </div>
 
 <script>
 const statusEl = document.getElementById('status');
 const orthoEl = document.getElementById('ortho');
-const phonEl = document.getElementById('phon');
+const phon1El = document.getElementById('phon1');
+const phon2El = document.getElementById('phon2');
 const noteEl = document.getElementById('note');
-const engineEl = document.getElementById('engine');
 
 const fileInput = document.getElementById('file');
 const playerWrap = document.getElementById('playerWrap');
@@ -69,9 +72,9 @@ document.getElementById('go').onclick = async () => {
 
   statusEl.textContent = 'Обрабатываю...';
   orthoEl.textContent = '';
-  phonEl.textContent = '';
+  phon1El.textContent = '';
+  phon2El.textContent = '';
   noteEl.textContent = '';
-  engineEl.textContent = '';
 
   const fd = new FormData();
   fd.append('file', f);
@@ -87,10 +90,10 @@ document.getElementById('go').onclick = async () => {
     }
 
     statusEl.textContent = 'Готово';
-    orthoEl.textContent = j.orthography;
-    phonEl.textContent = j.phonetics;
+    orthoEl.textContent = j.orthography || '';
+    phon1El.textContent = j.phonetics_ipa || '';
+    phon2El.textContent = j.phonetics_rus || '';
     noteEl.textContent = j.note || '';
-    if (j.stt_engine) engineEl.textContent = 'Распознавание: ' + j.stt_engine;
   } catch(e) {
     statusEl.textContent = 'Ошибка соединения';
     alert('Не удалось связаться с сервером.\n\n' + e);

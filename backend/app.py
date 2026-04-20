@@ -1,4 +1,4 @@
-import os
+﻿import os
 import re
 import json
 import uuid
@@ -16,7 +16,7 @@ FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
 MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "/app/models/vosk-model-small-ru-0.22")
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app)  # можно оставить
+CORS(app)
 
 app.config["MAX_CONTENT_LENGTH"] = APP_MAX_MB * 1024 * 1024
 
@@ -28,16 +28,17 @@ def run_ffmpeg_to_wav16k_mono(src_path: str, dst_path: str):
     return p.returncode, (p.stderr or "").strip()
 
 def stt_vosk(wav_path: str) -> str:
-    wf = wave.open(wav_path, "rb")
-    rec = KaldiRecognizer(model, wf.getframerate())
     parts = []
-    while True:
-        data = wf.readframes(4000)
-        if len(data) == 0:
-            break
-        if rec.AcceptWaveform(data):
-            parts.append(json.loads(rec.Result()).get("text",""))
-    parts.append(json.loads(rec.FinalResult()).get("text",""))
+    with wave.open(wav_path, "rb") as wf:
+        rec = KaldiRecognizer(model, wf.getframerate())
+        while True:
+            data = wf.readframes(4000)
+            if len(data) == 0:
+                break
+            if rec.AcceptWaveform(data):
+                parts.append(json.loads(rec.Result()).get("text", ""))
+        parts.append(json.loads(rec.FinalResult()).get("text", ""))
+
     text = " ".join([p for p in parts if p]).strip()
     if text:
         text = text[0].upper() + text[1:]
@@ -45,23 +46,87 @@ def stt_vosk(wav_path: str) -> str:
             text += "."
     return text if text else "[не распознано]"
 
-def phonemes_by_words(text: str) -> str:
+def _ipa_token_to_rus(tok: str) -> str:
+    t = (tok or "").strip()
+    if not t:
+        return ""
+    t = t.replace("ˈ", "").replace("ˌ", "")
+    long_ = t.endswith("ː")
+    if long_:
+        t = t[:-1]
+    pal = "ʲ" in t
+    t = t.replace("ʲ", "")
+    t = t.replace("ɡ", "g")
+
+    base = {
+        "t͡s": "ц",
+        "t͡ɕ": "ч",
+        "ɕː": "щː",
+        "ɕ": "щ",
+        "ʂ": "ш",
+        "ʐ": "ж",
+        "x": "х",
+        "j": "й",
+
+        "a": "а",
+        "o": "о",
+        "u": "у",
+        "i": "и",
+        "e": "э",
+        "ɨ": "ы",
+        "ɐ": "а",
+        "ə": "а",
+
+        "p": "п",
+        "b": "б",
+        "v": "в",
+        "f": "ф",
+        "m": "м",
+        "n": "н",
+        "l": "л",
+        "r": "р",
+        "k": "к",
+        "g": "г",
+        "d": "д",
+        "t": "т",
+        "s": "с",
+        "z": "з",
+    }
+
+    ch = base.get(t, t)
+    if pal and ch and ch.isalpha():
+        ch = ch + "'"
+    if long_:
+        ch = ch + "ː"
+    return ch
+
+def phonetics_two_lines(text: str):
     t = (text or "").strip().lower()
-    blocks = []
+
+    ipa_blocks = []
+    rus_blocks = []
+
     for sent in gruut.sentences(t, lang="ru"):
         for w in sent:
-            wt = getattr(w, "text", "") or ""
             ph = getattr(w, "phonemes", None)
-            if not wt:
-                continue
             if ph:
-                blocks.append(f"{wt}(" + " ".join(ph) + ")")
+                # ВАЖНО: без круглых скобок
+                ipa_blocks.append(" ".join(ph))
+                rus_blocks.append(" ".join(_ipa_token_to_rus(p) for p in ph))
             else:
-                blocks.append(f"{wt}(?)")
-        blocks.append("‖")
-    while blocks and blocks[-1] == "‖":
-        blocks.pop()
-    return "[" + " ".join(blocks) + "]"
+                ipa_blocks.append("?")
+                rus_blocks.append("?")
+        ipa_blocks.append("‖")
+        rus_blocks.append("‖")
+
+    while ipa_blocks and ipa_blocks[-1] == "‖":
+        ipa_blocks.pop()
+    while rus_blocks and rus_blocks[-1] == "‖":
+        rus_blocks.pop()
+
+    ipa = "[" + " ".join(ipa_blocks) + "]"
+    rus = "[" + " ".join(rus_blocks) + "]"
+    return ipa, rus
 
 @app.get("/")
 def page_index():
@@ -86,7 +151,7 @@ def api_process():
 
     uid = str(uuid.uuid4())
     os.makedirs("/tmp/uploads", exist_ok=True)
-    safe_name = re.sub(r"[^a-zA-Z0-9._-]+","_", f.filename)
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", f.filename)
     src_path = f"/tmp/uploads/{uid}_{safe_name}"
     wav_path = f"/tmp/uploads/{uid}.wav"
 
@@ -97,13 +162,14 @@ def api_process():
         return jsonify({"ok": False, "error": "ffmpeg не смог конвертировать аудио", "details": err}), 400
 
     text = stt_vosk(wav_path)
-    phon = phonemes_by_words(text)
+    ipa, rus = phonetics_two_lines(text)
 
     return jsonify({
         "ok": True,
         "orthography": text,
-        "phonetics": phon,
-        "note": "Границы слов: слово(фонемы). Пауза/граница фразы: ‖."
+        "phonetics_ipa": ipa,
+        "phonetics_rus": rus,
+        "note": "Фонетика 1: IPA (фонемы, без слов). Фонетика 2: русскими символами. Пауза/граница фразы: ‖."
     })
 
 if __name__ == "__main__":
