@@ -141,6 +141,7 @@
     } catch (e) {
       setStatus("Ошибка загрузки");
       console.error(e);
+      alert("Не удалось загрузить данные.\n\n" + e);
     }
   }
 
@@ -161,14 +162,26 @@
 
     els.region.addEventListener("change", () => {
       const r = els.region.value;
-      fillSelect(els.district, uniq(ALL.filter(x => !r || x.region === r).map(x => x.district)), "Все районы");
-      fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r)).map(x => x.settlement)), "Все населённые пункты");
+      fillSelect(
+        els.district,
+        uniq(ALL.filter(x => !r || x.region === r).map(x => x.district)),
+        "Все районы"
+      );
+      fillSelect(
+        els.settlement,
+        uniq(ALL.filter(x => (!r || x.region === r)).map(x => x.settlement)),
+        "Все населённые пункты"
+      );
     });
 
     els.district.addEventListener("change", () => {
       const r = els.region.value;
       const d = els.district.value;
-      fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r) && (!d || x.district === d)).map(x => x.settlement)), "Все населённые пункты");
+      fillSelect(
+        els.settlement,
+        uniq(ALL.filter(x => (!r || x.region === r) && (!d || x.district === d)).map(x => x.settlement)),
+        "Все населённые пункты"
+      );
     });
 
     els.q.addEventListener("change", () => {
@@ -186,27 +199,46 @@
   }
 
   function render() {
-    const q = els.q.value, u1 = els.unit1.value, u2 = els.unit2.value, r = els.region.value, d = els.district.value, s = els.settlement.value;
-    const filtered = ALL.filter(x => (!q || x.question === q) && (!u1 || x.unit1 === u1) && (!u2 || x.unit2 === u2) && (!r || x.region === r) && (!d || x.district === d) && (!s || x.settlement === s));
-    
+    const q = els.q.value, u1 = els.unit1.value, u2 = els.unit2.value;
+    const r = els.region.value, d = els.district.value, s = els.settlement.value;
+
+    const filtered = ALL.filter(x =>
+      (!q || x.question === q) &&
+      (!u1 || x.unit1 === u1) &&
+      (!u2 || x.unit2 === u2) &&
+      (!r || x.region === r) &&
+      (!d || x.district === d) &&
+      (!s || x.settlement === s)
+    );
+
     setStatus(`Показано: ${filtered.length} из ${ALL.length}`);
     markersLayer.clearLayers();
     els.list.innerHTML = "";
 
     const bounds = [];
-    filtered.forEach((x, i) => {
+    filtered.forEach((x) => {
       const m = L.marker([x.lat, x.lon]).addTo(markersLayer);
       m.bindPopup(`<b>${esc(x.settlement)}</b><br>${esc(x.question)}<br><i>${esc(x.unit1)} / ${esc(x.unit2)}</i>`);
       bounds.push([x.lat, x.lon]);
-      
+
       const row = document.createElement("div");
       row.className = "row";
-      row.innerHTML = `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div><div class="small">${esc(x.region)} · unit1=${esc(x.unit1)}</div>`;
-      row.onclick = () => { map.setView([x.lat, x.lon], 12); m.openPopup(); };
+      row.innerHTML =
+        `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div>` +
+        `<div class="small">${esc(x.region)} · unit1=${esc(x.unit1)}</div>`;
+
+      // ВАЖНО: не зумим "на улицу", только центрируем и открываем popup
+      row.onclick = () => { map.panTo([x.lat, x.lon]); m.openPopup(); };
+
       els.list.appendChild(row);
     });
 
-    if (bounds.length > 0) map.fitBounds(bounds, { padding: [20, 20] });
+    // ВАЖНО: управление зумом
+    if (bounds.length >= 2) {
+      map.fitBounds(bounds, { padding: [20, 20], maxZoom: 10 }); // ограничение maxZoom
+    } else if (bounds.length === 1) {
+      map.panTo(bounds[0]); // только центр, без изменения масштаба
+    }
   }
 
   async function prepareAdd() {
@@ -228,16 +260,22 @@
       const j = await r.json();
       if (!j.ok) {
         const wiki = j.wiki || `https://ru.wikipedia.org/wiki/${encodeURIComponent(setl.replace(/ /g, "_"))}`;
-        els.add_result.innerHTML = `Не нашел. <a target="_blank" href="${wiki}">В Википедии</a>`;
-        setAddStatus("Ошибка");
+        els.add_result.innerHTML = `Не нашел координаты. <a target="_blank" href="${wiki}">Открыть Википедию</a>`;
+        setAddStatus("Координаты не найдены");
         return;
       }
-      LAST_ADD_ROW = { region: reg, district: dist, settlement: setl, lat: j.lat, lon: j.lon, question: ques, unit1: u1, unit2: u2, comment: "" };
+      LAST_ADD_ROW = {
+        region: reg, district: dist, settlement: setl,
+        lat: j.lat, lon: j.lon,
+        question: ques, unit1: u1, unit2: u2,
+        comment: ""
+      };
       els.add_result.innerHTML = `Найдено: <b>${esc(j.display_name)}</b>`;
       els.add_send.disabled = false;
       setAddStatus("Готово");
     } catch (e) {
       setAddStatus("Ошибка связи");
+      els.add_result.textContent = String(e);
     }
   }
 
@@ -258,10 +296,11 @@
         els.add_send.disabled = true;
       } else {
         setAddStatus("Ошибка");
-        els.add_result.textContent = j.error;
+        els.add_result.textContent = j.error || JSON.stringify(j);
       }
     } catch (e) {
       setAddStatus("Ошибка");
+      els.add_result.textContent = String(e);
     }
   }
 
