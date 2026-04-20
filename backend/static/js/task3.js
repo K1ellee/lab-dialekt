@@ -216,15 +216,16 @@
     );
   }
 
-  function groupForAllQuestions(rows) {
-    // группируем по месту (регион/район/нас.пункт + координаты)
-    // координаты округляем, чтобы не дробились из-за мелких отличий
+  // Группировка строго по названию (region + district + settlement),
+  // координаты берутся от ПЕРВОЙ записи в группе
+  function groupBySettlement(rows) {
     const m = new Map();
     for (const x of rows) {
       const key = [
-        x.region, x.district, x.settlement,
-        x.lat.toFixed(5), x.lon.toFixed(5)
-      ].join("|");
+        (x.region || "").toLowerCase().trim(),
+        (x.district || "").toLowerCase().trim(),
+        (x.settlement || "").toLowerCase().trim()
+      ].join("|||");
 
       if (!m.has(key)) {
         m.set(key, {
@@ -238,27 +239,32 @@
       }
       m.get(key).items.push(x);
     }
-    // сортируем вопросы внутри пункта
+
     const out = Array.from(m.values());
     for (const g of out) {
       g.items.sort((a,b) => (a.question || "").localeCompare((b.question || ""), "ru"));
     }
-    // сортировка пунктов
     out.sort((a,b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
     return out;
   }
 
   function popupHtmlForGroup(g) {
-    const title = `<div><b>${esc(g.settlement || "")}</b></div>`;
-    const adm = `<div class="small">${esc(g.region)}${g.district ? (", " + esc(g.district)) : ""}</div>`;
-    const rows = g.items.map(x =>
-      `<div style="margin-top:6px;">
-        <div><b>${esc(x.question)}</b></div>
-        <div class="mono">${esc(x.unit1)} / ${esc(x.unit2)}</div>
-      </div>`
-    ).join("");
+    let html = `<div style="min-width:280px;max-height:300px;overflow-y:auto;">`;
+    html += `<div><b>${esc(g.settlement || "(без названия)")}</b></div>`;
+    html += `<div class="small">${esc(g.region)}${g.district ? (", " + esc(g.district)) : ""}</div>`;
+    html += `<hr style="margin:6px 0">`;
 
-    return `<div style="min-width:260px">${title}${adm}<hr style="margin:8px 0">${rows}</div>`;
+    for (let i = 0; i < g.items.length; i++) {
+      const x = g.items[i];
+      html += `<div style="margin-bottom:8px;">`;
+      html += `<div><b>${i+1}. ${esc(x.question)}</b></div>`;
+      html += `<div>Ответ 1: ${esc(x.unit1)}</div>`;
+      html += `<div>Ответ 2: ${esc(x.unit2)}</div>`;
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
   }
 
   function popupHtmlSingle(x) {
@@ -266,18 +272,18 @@
       `<div style="min-width:240px">` +
       `<div><b>${esc(x.settlement || "")}</b></div>` +
       `<div class="small">${esc(x.region)}${x.district ? (", " + esc(x.district)) : ""}</div>` +
-      `<hr style="margin:8px 0">` +
+      `<hr style="margin:6px 0">` +
       `<div><b>${esc(x.question)}</b></div>` +
-      `<div class="mono">${esc(x.unit1)} / ${esc(x.unit2)}</div>` +
+      `<div>Ответ 1: ${esc(x.unit1)}</div>` +
+      `<div>Ответ 2: ${esc(x.unit2)}</div>` +
       `</div>`
     );
   }
 
   function render() {
-    const q = els.q.value; // важно: пусто => "все вопросы"
+    const q = els.q.value;
     const rows = getFilteredRows();
 
-    // ВАЖНО: при "Показать" НЕ меняем ни зум, ни центр карты
     markersLayer.clearLayers();
     els.list.innerHTML = "";
 
@@ -287,41 +293,35 @@
       return;
     }
 
-    if (!q) {
-      // режим "Все вопросы": 1 метка на пункт, popup со всеми вопросами
-      const groups = groupForAllQuestions(rows);
-      setStatus(`Пунктов: ${groups.length} · Записей: ${rows.length} (всего: ${ALL.length})`);
+    // ВСЕГДА группируем по пункту: одна метка = один населённый пункт
+    const groups = groupBySettlement(rows);
+    setStatus(`Пунктов: ${groups.length} · Записей: ${rows.length} (всего: ${ALL.length})`);
 
-      for (const g of groups) {
-        const m = L.marker([g.lat, g.lon]).addTo(markersLayer);
+    for (const g of groups) {
+      const m = L.marker([g.lat, g.lon]).addTo(markersLayer);
+
+      // popup: если в группе 1 запись — простой, если больше — все вопросы
+      if (g.items.length === 1) {
+        m.bindPopup(popupHtmlSingle(g.items[0]));
+      } else {
         m.bindPopup(popupHtmlForGroup(g));
-
-        const row = document.createElement("div");
-        row.className = "row";
-        row.innerHTML =
-          `<div><b>${esc(g.settlement || "")}</b> — ${g.items.length} вопрос(ов)</div>` +
-          `<div class="small">${esc(g.region)}${g.district ? (" · " + esc(g.district)) : ""}</div>`;
-
-        row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
-        els.list.appendChild(row);
       }
-      return;
-    }
-
-    // режим "конкретный вопрос": как раньше (по строкам)
-    setStatus(`Показано записей: ${rows.length} из ${ALL.length}`);
-
-    for (const x of rows) {
-      const m = L.marker([x.lat, x.lon]).addTo(markersLayer);
-      m.bindPopup(popupHtmlSingle(x));
 
       const row = document.createElement("div");
       row.className = "row";
-      row.innerHTML =
-        `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div>` +
-        `<div class="small">${esc(x.region)}${x.district ? (" · " + esc(x.district)) : ""} · ${esc(x.unit1)} / ${esc(x.unit2)}</div>`;
 
-      row.onclick = () => { map.panTo([x.lat, x.lon]); m.openPopup(); };
+      if (g.items.length === 1) {
+        const x = g.items[0];
+        row.innerHTML =
+          `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div>` +
+          `<div class="small">${esc(x.region)}${x.district ? (" · " + esc(x.district)) : ""} · ${esc(x.unit1)} / ${esc(x.unit2)}</div>`;
+      } else {
+        row.innerHTML =
+          `<div><b>${esc(g.settlement)}</b> — ${g.items.length} вопрос(ов)</div>` +
+          `<div class="small">${esc(g.region)}${g.district ? (" · " + esc(g.district)) : ""}</div>`;
+      }
+
+      row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
       els.list.appendChild(row);
     }
   }
