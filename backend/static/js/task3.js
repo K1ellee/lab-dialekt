@@ -334,7 +334,7 @@
     const reg = els.add_region.value.trim(), dist = els.add_district.value.trim(), setl = els.add_settlement.value.trim();
     const ques = els.add_question.value.trim(), u1 = els.add_unit1.value.trim(), u2 = els.add_unit2.value.trim();
 
-    if (!reg || !setl || !ques || !u1 || !u2) {
+    if (!reg || !setl || !ques || !u1) {
       setAddStatus("Заполни обязательные поля!");
       return;
     }
@@ -400,3 +400,4 @@
   loadBoundary();
   loadData();
 })();
+

@@ -260,7 +260,7 @@ def api_sheet_append():
     payload = request.get_json(silent=True) or {}
 
     # минимальная валидация
-    required = ["region", "settlement", "question", "unit1", "unit2", "lat", "lon"]
+    required = ["region", "settlement", "question", "unit1", "lat", "lon"]
     missing = [k for k in required if not str(payload.get(k, "")).strip()]
     if missing:
         return jsonify({"ok": False, "error": "Missing fields: " + ", ".join(missing)}), 400
@@ -312,3 +312,4 @@ def api_process():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     app.run(host="0.0.0.0", port=port)
+
