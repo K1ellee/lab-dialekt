@@ -56,7 +56,8 @@
   function esc(s) {
     return (s ?? "").toString()
       .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
   }
 
@@ -216,8 +217,7 @@
     );
   }
 
-  // Группировка строго по названию (region + district + settlement),
-  // координаты берутся от ПЕРВОЙ записи в группе
+  // Одна метка = один населённый пункт (ключ: region+district+settlement, но district может быть пустым)
   function groupBySettlement(rows) {
     const m = new Map();
     for (const x of rows) {
@@ -281,7 +281,6 @@
   }
 
   function render() {
-    const q = els.q.value;
     const rows = getFilteredRows();
 
     markersLayer.clearLayers();
@@ -293,19 +292,14 @@
       return;
     }
 
-    // ВСЕГДА группируем по пункту: одна метка = один населённый пункт
     const groups = groupBySettlement(rows);
     setStatus(`Пунктов: ${groups.length} · Записей: ${rows.length} (всего: ${ALL.length})`);
 
     for (const g of groups) {
       const m = L.marker([g.lat, g.lon]).addTo(markersLayer);
 
-      // popup: если в группе 1 запись — простой, если больше — все вопросы
-      if (g.items.length === 1) {
-        m.bindPopup(popupHtmlSingle(g.items[0]));
-      } else {
-        m.bindPopup(popupHtmlForGroup(g));
-      }
+      if (g.items.length === 1) m.bindPopup(popupHtmlSingle(g.items[0]));
+      else m.bindPopup(popupHtmlForGroup(g));
 
       const row = document.createElement("div");
       row.className = "row";
@@ -331,11 +325,15 @@
     els.add_result.innerHTML = "";
     els.add_send.disabled = true;
 
-    const reg = els.add_region.value.trim(), dist = els.add_district.value.trim(), setl = els.add_settlement.value.trim();
-    const ques = els.add_question.value.trim(), u1 = els.add_unit1.value.trim(), u2 = els.add_unit2.value.trim();
+    const reg = els.add_region.value.trim();
+    let dist = els.add_district.value.trim();       // <-- район можно не вводить
+    const setl = els.add_settlement.value.trim();
+    const ques = els.add_question.value.trim();
+    const u1 = els.add_unit1.value.trim();
+    const u2 = els.add_unit2.value.trim();          // unit2 необязателен
 
     if (!reg || !setl || !ques || !u1) {
-      setAddStatus("Заполни обязательные поля!");
+      setAddStatus("Заполни: регион, населённый пункт, вопрос, unit1");
       return;
     }
 
@@ -352,14 +350,29 @@
         return;
       }
 
+      // <-- Автоподстановка района
+      if (!dist && j.district) {
+        dist = String(j.district).trim();
+        els.add_district.value = dist;
+      }
+
       LAST_ADD_ROW = {
-        region: reg, district: dist, settlement: setl,
-        lat: j.lat, lon: j.lon,
-        question: ques, unit1: u1, unit2: u2,
+        region: reg,
+        district: dist,      // может быть пустым, но если нашли — подставили
+        settlement: setl,
+        lat: j.lat,
+        lon: j.lon,
+        question: ques,
+        unit1: u1,
+        unit2: u2,
         comment: ""
       };
 
-      els.add_result.innerHTML = `Найдено: <b>${esc(j.display_name)}</b><br>Координаты: ${j.lat}, ${j.lon}`;
+      els.add_result.innerHTML =
+        `Найдено: <b>${esc(j.display_name)}</b>` +
+        (dist ? `<br>Район (авто): <b>${esc(dist)}</b>` : "") +
+        `<br>Координаты: ${j.lat}, ${j.lon}`;
+
       els.add_send.disabled = false;
       setAddStatus("Готово");
     } catch (e) {
@@ -386,7 +399,7 @@
         els.add_send.disabled = true;
       } else {
         setAddStatus("Ошибка");
-        els.add_result.textContent = j.error || JSON.stringify(j);
+        els.add_result.textContent = (j.error || "Ошибка") + (j.details ? (": " + j.details) : "");
       }
     } catch (e) {
       setAddStatus("Ошибка");
@@ -400,4 +413,3 @@
   loadBoundary();
   loadData();
 })();
-

@@ -161,6 +161,19 @@ def _http_post_json(url: str, payload: dict, timeout_s: int = 25):
     except Exception:
         return {"ok": False, "error": "Apps Script returned non-JSON", "raw": raw[:500]}
 
+def _extract_district(address: dict) -> str:
+    """
+    Nominatim addressdetails может возвращать район в разных полях.
+    Для РФ чаще всего подходит county (район), но иногда приходят state_district/municipality.
+    """
+    if not isinstance(address, dict):
+        return ""
+    for k in ("county", "state_district", "municipality", "city_district"):
+        v = address.get(k)
+        if v and str(v).strip():
+            return str(v).strip()
+    return ""
+
 @app.get("/")
 def page_index():
     return render_template("index.html")
@@ -182,7 +195,12 @@ def api_geocode():
     if q in _GEOCODE_CACHE:
         return jsonify(_GEOCODE_CACHE[q])
 
-    params = {"format": "json", "limit": "1", "q": q}
+    params = {
+        "format": "json",
+        "limit": "1",
+        "q": q,
+        "addressdetails": "1"  # <-- важно для автоподстановки района
+    }
     url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
 
     try:
@@ -200,11 +218,15 @@ def api_geocode():
         return jsonify(resp)
 
     item = data[0]
+    address = item.get("address") or {}
+    district = _extract_district(address)
+
     resp = {
         "ok": True,
         "lat": float(item["lat"]),
         "lon": float(item["lon"]),
-        "display_name": item.get("display_name", "")
+        "display_name": item.get("display_name", ""),
+        "district": district,
     }
     _GEOCODE_CACHE[q] = resp
     return jsonify(resp)
@@ -215,7 +237,6 @@ def api_boundary_udmurtia():
     if _BOUNDARY_CACHE is not None:
         return jsonify(_BOUNDARY_CACHE)
 
-    # Точная граница из OSM (Nominatim) как GeoJSON geometry
     params = {
         "format": "json",
         "limit": "1",
@@ -259,13 +280,12 @@ def api_sheet_append():
 
     payload = request.get_json(silent=True) or {}
 
-    # минимальная валидация
+    # unit2 и district не обязательны
     required = ["region", "settlement", "question", "unit1", "lat", "lon"]
     missing = [k for k in required if not str(payload.get(k, "")).strip()]
     if missing:
         return jsonify({"ok": False, "error": "Missing fields: " + ", ".join(missing)}), 400
 
-    # по условию: без комментария
     payload["comment"] = ""
 
     if SHEET_APPEND_TOKEN:
@@ -312,4 +332,3 @@ def api_process():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     app.run(host="0.0.0.0", port=port)
-
