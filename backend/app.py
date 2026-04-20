@@ -4,6 +4,8 @@ import json
 import uuid
 import subprocess
 import wave
+from urllib.parse import urlencode, quote
+from urllib.request import Request, urlopen
 
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -21,6 +23,8 @@ CORS(app)
 app.config["MAX_CONTENT_LENGTH"] = APP_MAX_MB * 1024 * 1024
 
 model = Model(MODEL_PATH)
+
+_GEOCODE_CACHE = {}
 
 def run_ffmpeg_to_wav16k_mono(src_path: str, dst_path: str):
     cmd = [FFMPEG, "-y", "-i", src_path, "-ac", "1", "-ar", "16000", "-vn", dst_path]
@@ -112,7 +116,6 @@ def phonetics_two_lines(text: str):
         for w in sent:
             ph = getattr(w, "phonemes", None)
             if ph:
-                # Внутри слова: БЕЗ пробелов
                 ipa_word = "".join(p for p in ph if p).strip()
                 rus_word = "".join(_ipa_token_to_rus(p) for p in ph if p).strip()
                 ipa_blocks.append(ipa_word if ipa_word else "?")
@@ -129,7 +132,6 @@ def phonetics_two_lines(text: str):
     while rus_blocks and rus_blocks[-1] == "‖":
         rus_blocks.pop()
 
-    # Пробелы только между словами/блоками
     ipa = "[" + " ".join(ipa_blocks) + "]"
     rus = "[" + " ".join(rus_blocks) + "]"
     return ipa, rus
@@ -145,6 +147,52 @@ def page_task1():
 @app.get("/task3")
 def page_task3():
     return render_template("task3.html")
+
+@app.get("/api/geocode")
+def api_geocode():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "Параметр q пустой"}), 400
+
+    if q in _GEOCODE_CACHE:
+        return jsonify(_GEOCODE_CACHE[q])
+
+    params = {
+        "format": "json",
+        "limit": "1",
+        "q": q
+    }
+    url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
+
+    try:
+        req = Request(url, headers={
+            # Важно для Nominatim: нужен User-Agent
+            "User-Agent": "lab-dialekt/1.0 (Render Flask demo)"
+        })
+        raw = urlopen(req, timeout=12).read().decode("utf-8", errors="replace")
+        data = json.loads(raw)
+    except Exception as e:
+        resp = {"ok": False, "error": "Ошибка геокодирования", "details": str(e)}
+        _GEOCODE_CACHE[q] = resp
+        return jsonify(resp), 502
+
+    if not data:
+        # Дадим ссылку на Википедию (обычно координаты есть в карточке справа)
+        name = q.split(",")[0].strip()
+        wiki = "https://ru.wikipedia.org/wiki/" + quote(name.replace(" ", "_"))
+        resp = {"ok": False, "error": "Координаты не найдены", "wiki": wiki}
+        _GEOCODE_CACHE[q] = resp
+        return jsonify(resp)
+
+    item = data[0]
+    resp = {
+        "ok": True,
+        "lat": float(item["lat"]),
+        "lon": float(item["lon"]),
+        "display_name": item.get("display_name", "")
+    }
+    _GEOCODE_CACHE[q] = resp
+    return jsonify(resp)
 
 @app.post("/api/process")
 def api_process():
