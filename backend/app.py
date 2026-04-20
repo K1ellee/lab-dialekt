@@ -17,6 +17,10 @@ APP_MAX_MB = 20
 FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
 MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "/app/models/vosk-model-small-ru-0.22")
 
+# Apps Script Web App (ставится в Render -> Environment)
+SHEET_APPEND_URL = (os.environ.get("SHEET_APPEND_URL") or "").strip()
+SHEET_APPEND_TOKEN = (os.environ.get("SHEET_APPEND_TOKEN") or "").strip()
+
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)
 
@@ -25,6 +29,7 @@ app.config["MAX_CONTENT_LENGTH"] = APP_MAX_MB * 1024 * 1024
 model = Model(MODEL_PATH)
 
 _GEOCODE_CACHE = {}
+_BOUNDARY_CACHE = None
 
 def run_ffmpeg_to_wav16k_mono(src_path: str, dst_path: str):
     cmd = [FFMPEG, "-y", "-i", src_path, "-ac", "1", "-ar", "16000", "-vn", dst_path]
@@ -136,6 +141,26 @@ def phonetics_two_lines(text: str):
     rus = "[" + " ".join(rus_blocks) + "]"
     return ipa, rus
 
+def _http_get_json(url: str, timeout_s: int = 20):
+    req = Request(url, headers={"User-Agent": "lab-dialekt/1.0 (Render Flask demo)"})
+    raw = urlopen(req, timeout=timeout_s).read().decode("utf-8", errors="replace")
+    return json.loads(raw)
+
+def _http_post_json(url: str, payload: dict, timeout_s: int = 25):
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json; charset=utf-8",
+                 "User-Agent": "lab-dialekt/1.0 (Render Flask demo)"},
+        method="POST",
+    )
+    raw = urlopen(req, timeout=timeout_s).read().decode("utf-8", errors="replace")
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"ok": False, "error": "Apps Script returned non-JSON", "raw": raw[:500]}
+
 @app.get("/")
 def page_index():
     return render_template("index.html")
@@ -157,27 +182,17 @@ def api_geocode():
     if q in _GEOCODE_CACHE:
         return jsonify(_GEOCODE_CACHE[q])
 
-    params = {
-        "format": "json",
-        "limit": "1",
-        "q": q
-    }
+    params = {"format": "json", "limit": "1", "q": q}
     url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
 
     try:
-        req = Request(url, headers={
-            # Важно для Nominatim: нужен User-Agent
-            "User-Agent": "lab-dialekt/1.0 (Render Flask demo)"
-        })
-        raw = urlopen(req, timeout=12).read().decode("utf-8", errors="replace")
-        data = json.loads(raw)
+        data = _http_get_json(url, timeout_s=12)
     except Exception as e:
         resp = {"ok": False, "error": "Ошибка геокодирования", "details": str(e)}
         _GEOCODE_CACHE[q] = resp
         return jsonify(resp), 502
 
     if not data:
-        # Дадим ссылку на Википедию (обычно координаты есть в карточке справа)
         name = q.split(",")[0].strip()
         wiki = "https://ru.wikipedia.org/wiki/" + quote(name.replace(" ", "_"))
         resp = {"ok": False, "error": "Координаты не найдены", "wiki": wiki}
@@ -193,6 +208,74 @@ def api_geocode():
     }
     _GEOCODE_CACHE[q] = resp
     return jsonify(resp)
+
+@app.get("/api/boundary/udmurtia")
+def api_boundary_udmurtia():
+    global _BOUNDARY_CACHE
+    if _BOUNDARY_CACHE is not None:
+        return jsonify(_BOUNDARY_CACHE)
+
+    # Точная граница из OSM (Nominatim) как GeoJSON geometry
+    params = {
+        "format": "json",
+        "limit": "1",
+        "q": "Удмуртская Республика",
+        "polygon_geojson": "1"
+    }
+    url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
+
+    try:
+        data = _http_get_json(url, timeout_s=20)
+        if not data:
+            return jsonify({"ok": False, "error": "Boundary not found"}), 404
+
+        geo = data[0].get("geojson")
+        if not geo:
+            return jsonify({"ok": False, "error": "No geojson in response"}), 502
+
+        fc = {
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {
+                    "name": "Удмуртская Республика",
+                    "display_name": data[0].get("display_name", "")
+                },
+                "geometry": geo
+            }]
+        }
+        _BOUNDARY_CACHE = fc
+        return jsonify(fc)
+    except Exception as e:
+        return jsonify({"ok": False, "error": "Boundary fetch failed", "details": str(e)}), 502
+
+@app.post("/api/sheet_append")
+def api_sheet_append():
+    if not SHEET_APPEND_URL:
+        return jsonify({
+            "ok": False,
+            "error": "SHEET_APPEND_URL not configured on server (Render Environment)."
+        }), 500
+
+    payload = request.get_json(silent=True) or {}
+
+    # минимальная валидация
+    required = ["region", "settlement", "question", "unit1", "unit2", "lat", "lon"]
+    missing = [k for k in required if not str(payload.get(k, "")).strip()]
+    if missing:
+        return jsonify({"ok": False, "error": "Missing fields: " + ", ".join(missing)}), 400
+
+    # по условию: без комментария
+    payload["comment"] = ""
+
+    if SHEET_APPEND_TOKEN:
+        payload["token"] = SHEET_APPEND_TOKEN
+
+    try:
+        resp = _http_post_json(SHEET_APPEND_URL, payload, timeout_s=25)
+        return jsonify(resp)
+    except Exception as e:
+        return jsonify({"ok": False, "error": "Failed to call Apps Script", "details": str(e)}), 502
 
 @app.post("/api/process")
 def api_process():
