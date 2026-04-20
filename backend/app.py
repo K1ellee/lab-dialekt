@@ -51,9 +51,11 @@ def _ipa_token_to_rus(tok: str) -> str:
     if not t:
         return ""
     t = t.replace("ˈ", "").replace("ˌ", "")
+
     long_ = t.endswith("ː")
     if long_:
         t = t[:-1]
+
     pal = "ʲ" in t
     t = t.replace("ʲ", "")
     t = t.replace("ɡ", "g")
@@ -110,12 +112,15 @@ def phonetics_two_lines(text: str):
         for w in sent:
             ph = getattr(w, "phonemes", None)
             if ph:
-                # ВАЖНО: без круглых скобок
-                ipa_blocks.append(" ".join(ph))
-                rus_blocks.append(" ".join(_ipa_token_to_rus(p) for p in ph))
+                # Внутри слова: БЕЗ пробелов
+                ipa_word = "".join(p for p in ph if p).strip()
+                rus_word = "".join(_ipa_token_to_rus(p) for p in ph if p).strip()
+                ipa_blocks.append(ipa_word if ipa_word else "?")
+                rus_blocks.append(rus_word if rus_word else "?")
             else:
                 ipa_blocks.append("?")
                 rus_blocks.append("?")
+
         ipa_blocks.append("‖")
         rus_blocks.append("‖")
 
@@ -124,6 +129,7 @@ def phonetics_two_lines(text: str):
     while rus_blocks and rus_blocks[-1] == "‖":
         rus_blocks.pop()
 
+    # Пробелы только между словами/блоками
     ipa = "[" + " ".join(ipa_blocks) + "]"
     rus = "[" + " ".join(rus_blocks) + "]"
     return ipa, rus
@@ -169,7 +175,7 @@ def api_process():
         "orthography": text,
         "phonetics_ipa": ipa,
         "phonetics_rus": rus,
-        "note": "Фонетика 1: IPA (фонемы, без слов). Фонетика 2: русскими символами. Пауза/граница фразы: ‖."
+        "note": "Пробелы только между словами; внутри слова фонемы слитно (пример: т'от'а). Пауза/граница фразы: ‖."
     })
 
 if __name__ == "__main__":
