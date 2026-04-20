@@ -36,7 +36,9 @@
     dlUnit2: $("dlUnit2"),
   };
 
-  const map = L.map("map", { scrollWheelZoom: true }).setView([56.85, 53.20], 7);
+  const DEFAULT_VIEW = { center: [56.85, 53.20], zoom: 7 };
+
+  const map = L.map("map", { scrollWheelZoom: true }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors'
@@ -191,18 +193,23 @@
     });
 
     els.apply.onclick = () => render();
+
     els.reset.onclick = () => {
       els.q.value = ""; els.unit1.value = ""; els.unit2.value = "";
       els.region.value = ""; els.district.value = ""; els.settlement.value = "";
+
+      // Вернуть карте исходный вид
+      map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+
       render();
     };
   }
 
-  function render() {
+  function getFiltered() {
     const q = els.q.value, u1 = els.unit1.value, u2 = els.unit2.value;
     const r = els.region.value, d = els.district.value, s = els.settlement.value;
 
-    const filtered = ALL.filter(x =>
+    return ALL.filter(x =>
       (!q || x.question === q) &&
       (!u1 || x.unit1 === u1) &&
       (!u2 || x.unit2 === u2) &&
@@ -210,35 +217,41 @@
       (!d || x.district === d) &&
       (!s || x.settlement === s)
     );
+  }
 
+  function render() {
+    const filtered = getFiltered();
     setStatus(`Показано: ${filtered.length} из ${ALL.length}`);
+
+    // ВАЖНО: при "Показать" НЕ меняем ни зум, ни центр карты
+    // только перерисовываем маркеры и список.
     markersLayer.clearLayers();
     els.list.innerHTML = "";
 
-    const bounds = [];
+    if (!filtered.length) {
+      els.list.innerHTML = '<div class="small">Нет результатов.</div>';
+      return;
+    }
+
     filtered.forEach((x) => {
       const m = L.marker([x.lat, x.lon]).addTo(markersLayer);
-      m.bindPopup(`<b>${esc(x.settlement)}</b><br>${esc(x.question)}<br><i>${esc(x.unit1)} / ${esc(x.unit2)}</i>`);
-      bounds.push([x.lat, x.lon]);
+      m.bindPopup(
+        `<b>${esc(x.settlement || "")}</b><br>` +
+        `${esc(x.question)}<br>` +
+        `<i>${esc(x.unit1)} / ${esc(x.unit2)}</i>`
+      );
 
       const row = document.createElement("div");
       row.className = "row";
       row.innerHTML =
         `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div>` +
-        `<div class="small">${esc(x.region)} · unit1=${esc(x.unit1)}</div>`;
+        `<div class="small">${esc(x.region)}${x.district ? (" · " + esc(x.district)) : ""} · unit1=${esc(x.unit1)} · unit2=${esc(x.unit2)}</div>`;
 
-      // ВАЖНО: не зумим "на улицу", только центрируем и открываем popup
+      // По клику — только центрирование (без зума) и popup
       row.onclick = () => { map.panTo([x.lat, x.lon]); m.openPopup(); };
 
       els.list.appendChild(row);
     });
-
-    // ВАЖНО: управление зумом
-    if (bounds.length >= 2) {
-      map.fitBounds(bounds, { padding: [20, 20], maxZoom: 10 }); // ограничение maxZoom
-    } else if (bounds.length === 1) {
-      map.panTo(bounds[0]); // только центр, без изменения масштаба
-    }
   }
 
   async function prepareAdd() {
@@ -255,22 +268,26 @@
     }
 
     const query = [setl, dist, reg, "Россия"].filter(Boolean).join(", ");
+
     try {
       const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
       const j = await r.json();
+
       if (!j.ok) {
         const wiki = j.wiki || `https://ru.wikipedia.org/wiki/${encodeURIComponent(setl.replace(/ /g, "_"))}`;
         els.add_result.innerHTML = `Не нашел координаты. <a target="_blank" href="${wiki}">Открыть Википедию</a>`;
         setAddStatus("Координаты не найдены");
         return;
       }
+
       LAST_ADD_ROW = {
         region: reg, district: dist, settlement: setl,
         lat: j.lat, lon: j.lon,
         question: ques, unit1: u1, unit2: u2,
         comment: ""
       };
-      els.add_result.innerHTML = `Найдено: <b>${esc(j.display_name)}</b>`;
+
+      els.add_result.innerHTML = `Найдено: <b>${esc(j.display_name)}</b><br>Координаты: ${j.lat}, ${j.lon}`;
       els.add_send.disabled = false;
       setAddStatus("Готово");
     } catch (e) {
@@ -289,6 +306,7 @@
         body: JSON.stringify(LAST_ADD_ROW)
       });
       const j = await r.json();
+
       if (j.ok) {
         setAddStatus("Успешно!");
         els.add_result.innerHTML = "Запись добавлена в таблицу.";
