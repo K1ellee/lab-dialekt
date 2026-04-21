@@ -56,17 +56,17 @@
       <button id="reset">Сброс</button>
       <span id="status" class="small" style="margin-left:10px;"></span>
     </div>
-
-    <div style="margin-top:10px;">
-      <label class="small">
-        <input type="checkbox" id="areasOn" checked>
-        Показать ареалы (автоматически, только при выборе конкретного вопроса)
-      </label>
-      <div id="areasLegend" class="small" style="margin-top:6px;"></div>
-    </div>
   </div>
 
   <div class="card"><div id="map"></div></div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Легенда</h3>
+    <ul class="small" style="margin:0; padding-left:18px;">
+      <li><b>Синяя метка</b> — населённый пункт (точка сбора данных). Нажми на метку, чтобы увидеть записи.</li>
+      <li><b>Красная линия</b> — граница Удмуртской Республики.</li>
+    </ul>
+  </div>
 
   <div class="card">
     <h3 style="margin-top:0;">Список результатов</h3>
@@ -128,6 +128,5 @@
 <script src="/static/config.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 <script src="/static/js/task3.js"></script>
 </body></html>
