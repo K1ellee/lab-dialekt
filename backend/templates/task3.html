@@ -62,10 +62,21 @@
 
   <div class="card">
     <h3 style="margin-top:0;">Легенда</h3>
-    <ul class="small" style="margin:0; padding-left:18px;">
-      <li><b>Синяя метка</b> — населённый пункт (точка сбора данных). Нажми на метку, чтобы увидеть записи.</li>
-      <li><b>Красная линия</b> — граница Удмуртской Республики.</li>
-    </ul>
+
+    <div class="legend">
+      <div class="legend-item">
+        <span class="legend-icon legend-marker" aria-hidden="true">
+          <img class="shadow" alt="" src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png">
+          <img class="pin" alt="" src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png">
+        </span>
+        <span class="small"><b>Населённый пункт</b> (точка сбора данных). Нажми на метку, чтобы увидеть записи.</span>
+      </div>
+
+      <div class="legend-item">
+        <span class="legend-icon legend-line" aria-hidden="true"></span>
+        <span class="small"><b>Граница Удмуртской Республики</b> (красная линия).</span>
+      </div>
+    </div>
   </div>
 
   <div class="card">
