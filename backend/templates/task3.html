@@ -31,7 +31,7 @@
         <select id="unit1"></select>
       </div>
       <div>
-        <div class="small">Ответ 2 (unit2, необязательно)</div>
+        <div class="small">Ответ 2 (unit2)</div>
         <select id="unit2"></select>
       </div>
     </div>
@@ -56,6 +56,14 @@
       <button id="reset">Сброс</button>
       <span id="status" class="small" style="margin-left:10px;"></span>
     </div>
+
+    <div style="margin-top:10px;">
+      <label class="small">
+        <input type="checkbox" id="areasOn" checked>
+        Показать ареалы (автоматически, только при выборе конкретного вопроса)
+      </label>
+      <div id="areasLegend" class="small" style="margin-top:6px;"></div>
+    </div>
   </div>
 
   <div class="card"><div id="map"></div></div>
@@ -68,7 +76,7 @@
   <div class="card">
     <h3 style="margin-top:0;">Добавить запись в таблицу (координаты ищутся автоматически)</h3>
 
-    <div class="small">Заполни поля (координаты вводить не нужно):</div>
+    <div class="small">Заполни поля (координаты вводить не нужно). Район можно не заполнять — подставится автоматически.</div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:10px;">
       <div>
@@ -76,7 +84,7 @@
         <input id="add_region" list="dlRegions" placeholder="например: Удмуртия">
       </div>
       <div>
-        <div class="small">Район</div>
+        <div class="small">Район (необязательно)</div>
         <input id="add_district" list="dlDistricts" placeholder="например: Завьяловский район">
       </div>
       <div>
@@ -115,21 +123,11 @@
     <datalist id="dlUnit1"></datalist>
     <datalist id="dlUnit2"></datalist>
   </div>
-
-  <div class="card">
-    <h3 style="margin-top:0;">Инструкция пользователя</h3>
-    <ol class="small">
-      <li>Фильтры можно оставлять пустыми (например, “Вопрос” = “Все вопросы”).</li>
-      <li>Клик по точке или по строке в списке показывает данные пункта.</li>
-      <li>Чтобы добавить запись: заполни форму → “Найти координаты…” → “Отправить/добавить”.</li>
-      <li>Если координаты не найдены, появится ссылка на Википедию (там обычно указаны координаты).</li>
-    </ol>
-  </div>
 </div>
 
 <script src="/static/config.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 <script src="/static/js/task3.js"></script>
 </body></html>
-

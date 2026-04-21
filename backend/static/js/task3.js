@@ -14,6 +14,9 @@
     district: $("district"),
     settlement: $("settlement"),
 
+    areasOn: $("areasOn"),
+    areasLegend: $("areasLegend"),
+
     apply: $("apply"),
     reset: $("reset"),
 
@@ -45,6 +48,7 @@
   }).addTo(map);
 
   const markersLayer = L.layerGroup().addTo(map);
+  const areasLayer = L.layerGroup().addTo(map);
   let boundaryLayer = null;
 
   let ALL = [];
@@ -201,6 +205,10 @@
       map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
       render();
     };
+
+    if (els.areasOn) {
+      els.areasOn.addEventListener("change", () => render());
+    }
   }
 
   function getFilteredRows() {
@@ -217,7 +225,7 @@
     );
   }
 
-  // Одна метка = один населённый пункт (ключ: region+district+settlement, но district может быть пустым)
+  // одна метка = один населённый пункт (ключ: region+district+settlement)
   function groupBySettlement(rows) {
     const m = new Map();
     for (const x of rows) {
@@ -280,21 +288,132 @@
     );
   }
 
+  function palette(i) {
+    const colors = ["#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00","#a65628","#f781bf","#999999"];
+    return colors[i % colors.length];
+  }
+
+  function renderAreasAuto(rows) {
+    areasLayer.clearLayers();
+    if (els.areasLegend) els.areasLegend.innerHTML = "";
+
+    const q = els.q.value;
+    const enabled = els.areasOn ? els.areasOn.checked : false;
+
+    // Только когда выбран конкретный вопрос
+    if (!enabled || !q) {
+      if (els.areasLegend) {
+        els.areasLegend.innerHTML = q ? "" : "Ареалы строятся только при выборе конкретного вопроса.";
+      }
+      return;
+    }
+
+    if (!window.turf) {
+      if (els.areasLegend) els.areasLegend.innerHTML = "Turf.js не загрузился, ареалы недоступны.";
+      return;
+    }
+
+    // группируем точки по unit1 (вариант ответа)
+    const by = new Map();
+    for (const x of rows) {
+      const ans = (x.unit1 || "").trim();
+      if (!ans) continue;
+
+      if (!by.has(ans)) by.set(ans, []);
+      by.get(ans).push(x);
+    }
+
+    const answers = Array.from(by.keys()).sort((a,b)=>a.localeCompare(b, "ru"));
+
+    const legendLines = [];
+    let idx = 0;
+
+    for (const ans of answers) {
+      const items = by.get(ans) || [];
+
+      // убираем дубли по одному и тому же населённому пункту (иначе одна точка повторяется)
+      const seen = new Set();
+      const pts = [];
+      for (const it of items) {
+        const key = [(it.region||""),(it.district||""),(it.settlement||"")].join("|||").toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pts.push(it);
+      }
+
+      const color = palette(idx++);
+      legendLines.push(`<span style="display:inline-block;width:10px;height:10px;background:${esc(color)};margin-right:6px;"></span>${esc(ans)} (${pts.length})`);
+
+      // 1 точка: круг
+      if (pts.length === 1) {
+        const p = pts[0];
+        L.circle([p.lat, p.lon], {
+          radius: 6000,
+          color, weight: 2,
+          fillColor: color, fillOpacity: 0.15
+        }).bindPopup(`<b>Ареал (условно)</b><br>unit1: ${esc(ans)}<br>Точек: 1`).addTo(areasLayer);
+        continue;
+      }
+
+      // 2 точки: линия + буфер
+      if (pts.length === 2) {
+        const coords = pts.map(p => [p.lon, p.lat]);
+        const line = turf.lineString(coords);
+        const poly = turf.buffer(line, 6, { units: "kilometers" }); // "полоса"
+        L.geoJSON(poly, {
+          style: { color, weight: 2, fillColor: color, fillOpacity: 0.12 }
+        }).bindPopup(`<b>Ареал (условно)</b><br>unit1: ${esc(ans)}<br>Точек: 2`).addTo(areasLayer);
+        continue;
+      }
+
+      // 3+ точек: выпуклая оболочка
+      const features = pts.map(p => turf.point([p.lon, p.lat]));
+      const fc = turf.featureCollection(features);
+      const hull = turf.convex(fc); // convex hull
+
+      if (!hull) {
+        // fallback: просто буфер вокруг всех точек
+        const multi = turf.featureCollection(features);
+        const bboxPoly = turf.bboxPolygon(turf.bbox(multi));
+        const poly = turf.buffer(bboxPoly, 6, { units: "kilometers" });
+        L.geoJSON(poly, {
+          style: { color, weight: 2, fillColor: color, fillOpacity: 0.12 }
+        }).bindPopup(`<b>Ареал (fallback)</b><br>unit1: ${esc(ans)}<br>Точек: ${pts.length}`).addTo(areasLayer);
+        continue;
+      }
+
+      // Немного расширим, чтобы ареал был читаемее
+      const buffered = turf.buffer(hull, 6, { units: "kilometers" });
+
+      L.geoJSON(buffered, {
+        style: { color, weight: 2, fillColor: color, fillOpacity: 0.12 }
+      }).bindPopup(`<b>Ареал</b><br>unit1: ${esc(ans)}<br>Точек: ${pts.length}`).addTo(areasLayer);
+    }
+
+    if (els.areasLegend) {
+      els.areasLegend.innerHTML = "<div><b>Ареалы по unit1:</b></div>" + legendLines.map(x => `<div>${x}</div>`).join("");
+    }
+  }
+
   function render() {
     const rows = getFilteredRows();
 
     markersLayer.clearLayers();
     els.list.innerHTML = "";
+    areasLayer.clearLayers();
+    if (els.areasLegend) els.areasLegend.innerHTML = "";
 
     if (!rows.length) {
       setStatus(`Показано: 0 из ${ALL.length}`);
       els.list.innerHTML = '<div class="small">Нет результатов.</div>';
+      renderAreasAuto(rows);
       return;
     }
 
     const groups = groupBySettlement(rows);
     setStatus(`Пунктов: ${groups.length} · Записей: ${rows.length} (всего: ${ALL.length})`);
 
+    // маркеры + список
     for (const g of groups) {
       const m = L.marker([g.lat, g.lon]).addTo(markersLayer);
 
@@ -315,9 +434,13 @@
           `<div class="small">${esc(g.region)}${g.district ? (" · " + esc(g.district)) : ""}</div>`;
       }
 
+      // не зумим, только центр + popup
       row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
       els.list.appendChild(row);
     }
+
+    // ареалы строим по исходным строкам (rows), не по группам
+    renderAreasAuto(rows);
   }
 
   async function prepareAdd() {
@@ -326,11 +449,11 @@
     els.add_send.disabled = true;
 
     const reg = els.add_region.value.trim();
-    let dist = els.add_district.value.trim();       // <-- район можно не вводить
+    let dist = els.add_district.value.trim(); // можно пустым
     const setl = els.add_settlement.value.trim();
     const ques = els.add_question.value.trim();
     const u1 = els.add_unit1.value.trim();
-    const u2 = els.add_unit2.value.trim();          // unit2 необязателен
+    const u2 = els.add_unit2.value.trim(); // необязательный
 
     if (!reg || !setl || !ques || !u1) {
       setAddStatus("Заполни: регион, населённый пункт, вопрос, unit1");
@@ -350,7 +473,7 @@
         return;
       }
 
-      // <-- Автоподстановка района
+      // автоподстановка района
       if (!dist && j.district) {
         dist = String(j.district).trim();
         els.add_district.value = dist;
@@ -358,7 +481,7 @@
 
       LAST_ADD_ROW = {
         region: reg,
-        district: dist,      // может быть пустым, но если нашли — подставили
+        district: dist,
         settlement: setl,
         lat: j.lat,
         lon: j.lon,
