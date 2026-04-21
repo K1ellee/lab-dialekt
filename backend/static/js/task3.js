@@ -39,10 +39,18 @@
   const DEFAULT_VIEW = { center: [56.85, 53.20], zoom: 7 };
 
   const map = L.map("map", { scrollWheelZoom: true }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+
+  // Явная атрибуция без лишних надписей/значков; Leaflet prefix убираем.
+  const osmAttribution = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
+    attribution: osmAttribution
   }).addTo(map);
+
+  // Убираем "Leaflet" из атрибуции
+  if (map.attributionControl && map.attributionControl.setPrefix) {
+    map.attributionControl.setPrefix("");
+  }
 
   const markersLayer = L.layerGroup().addTo(map);
   let boundaryLayer = null;
@@ -218,7 +226,6 @@
     );
   }
 
-  // одна метка = один населённый пункт (ключ: region+district+settlement)
   function groupBySettlement(rows) {
     const m = new Map();
     for (const x of rows) {
@@ -284,7 +291,6 @@
   function render() {
     const rows = getFilteredRows();
 
-    // ВАЖНО: при "Показать" НЕ меняем ни зум, ни центр карты
     markersLayer.clearLayers();
     els.list.innerHTML = "";
 
@@ -317,7 +323,6 @@
           `<div class="small">${esc(g.region)}${g.district ? (" · " + esc(g.district)) : ""}</div>`;
       }
 
-      // кликом по строке можно центрировать без зума
       row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
       els.list.appendChild(row);
     }
@@ -329,11 +334,11 @@
     els.add_send.disabled = true;
 
     const reg = els.add_region.value.trim();
-    let dist = els.add_district.value.trim();   // можно пустым
+    let dist = els.add_district.value.trim();
     const setl = els.add_settlement.value.trim();
     const ques = els.add_question.value.trim();
     const u1 = els.add_unit1.value.trim();
-    const u2 = els.add_unit2.value.trim();      // необязательный
+    const u2 = els.add_unit2.value.trim();
 
     if (!reg || !setl || !ques || !u1) {
       setAddStatus("Заполни: регион, населённый пункт, вопрос, unit1");
@@ -353,7 +358,6 @@
         return;
       }
 
-      // автоподстановка района
       if (!dist && j.district) {
         dist = String(j.district).trim();
         els.add_district.value = dist;
@@ -373,7 +377,7 @@
 
       els.add_result.innerHTML =
         `Найдено: <b>${esc(j.display_name)}</b>` +
-        (dist ? `<br>Район (авто): <b>${esc(dist)}</b>` : "") +
+        (dist ? `<br>Район: <b>${esc(dist)}</b>` : "") +
         `<br>Координаты: ${j.lat}, ${j.lon}`;
 
       els.add_send.disabled = false;
