@@ -63,12 +63,9 @@
   <div class="card">
     <h3 style="margin-top:0;">Легенда</h3>
 
-    <div class="legend">
+    <div class="legend" id="legend">
       <div class="legend-item">
-        <span class="legend-icon legend-marker" aria-hidden="true">
-          <img class="shadow" alt="" src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png">
-          <img class="pin" alt="" src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png">
-        </span>
+        <span class="legend-icon" id="legendPinBase"></span>
         <span class="small"><b>Населённый пункт</b></span>
       </div>
 
@@ -76,6 +73,8 @@
         <span class="legend-icon legend-line" aria-hidden="true"></span>
         <span class="small"><b>Граница Удмуртской Республики</b></span>
       </div>
+
+      <div id="legendDynamic" class="legend-dynamic"></div>
     </div>
   </div>
 
@@ -139,5 +138,6 @@
 <script src="/static/config.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 <script src="/static/js/task3.js"></script>
 </body></html>

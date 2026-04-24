@@ -14,6 +14,9 @@
     district: $("district"),
     settlement: $("settlement"),
 
+    legendPinBase: $("legendPinBase"),
+    legendDynamic: $("legendDynamic"),
+
     apply: $("apply"),
     reset: $("reset"),
 
@@ -40,18 +43,17 @@
 
   const map = L.map("map", { scrollWheelZoom: true }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
 
-  // Явная атрибуция без лишних надписей/значков; Leaflet prefix убираем.
   const osmAttribution = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: osmAttribution
   }).addTo(map);
 
-  // Убираем "Leaflet" из атрибуции
   if (map.attributionControl && map.attributionControl.setPrefix) {
     map.attributionControl.setPrefix("");
   }
 
+  const areasLayer = L.layerGroup().addTo(map);
   const markersLayer = L.layerGroup().addTo(map);
   let boundaryLayer = null;
 
@@ -124,6 +126,330 @@
       }).addTo(map);
     } catch (e) {
       console.warn("Boundary load failed:", e);
+    }
+  }
+
+  // ===== Colored pin icons (SVG) =====
+
+  function pinSvg(color) {
+    // Цветной "пин", близкий к Leaflet marker по размеру
+    return `
+<svg xmlns="http://www.w3.org/2000/svg" width="25" height="41" viewBox="0 0 25 41">
+  <path d="M12.5 0C5.596 0 0 5.596 0 12.5C0 23.2 12.5 41 12.5 41C12.5 41 25 23.2 25 12.5C25 5.596 19.404 0 12.5 0Z"
+        fill="${color}" stroke="#222" stroke-width="1"/>
+  <circle cx="12.5" cy="12.5" r="5.2" fill="#fff" fill-opacity="0.92"/>
+</svg>`.trim();
+  }
+
+  function pinDataUri(color) {
+    const svg = pinSvg(color);
+    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+  }
+
+  function makePinIcon(color) {
+    return L.icon({
+      iconUrl: pinDataUri(color),
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [0, -34],
+      shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      shadowSize: [41, 41],
+      shadowAnchor: [12, 41]
+    });
+  }
+
+  function answerKey(row) {
+    const u = (row.unit1 || "").trim();
+    if (u) return u;
+    // если unit1 пустой, но unit2 есть — используем unit2, иначе "(нет ответа)"
+    const u2 = (row.unit2 || "").trim();
+    if (u2) return u2;
+    return "(нет ответа)";
+  }
+
+  function hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    const c = (1 - Math.abs(2*l - 1)) * s;
+    const x = c * (1 - Math.abs((h/60) % 2 - 1));
+    const m = l - c/2;
+    let r=0,g=0,b=0;
+    if (0<=h && h<60) { r=c; g=x; b=0; }
+    else if (60<=h && h<120) { r=x; g=c; b=0; }
+    else if (120<=h && h<180) { r=0; g=c; b=x; }
+    else if (180<=h && h<240) { r=0; g=x; b=c; }
+    else if (240<=h && h<300) { r=x; g=0; b=c; }
+    else { r=c; g=0; b=x; }
+    const toHex = (v) => Math.round((v+m)*255).toString(16).padStart(2,"0");
+    return "#" + toHex(r) + toHex(g) + toHex(b);
+  }
+
+  function hexToRgba(hex, a) {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.slice(0,2), 16);
+    const g = parseInt(h.slice(2,4), 16);
+    const b = parseInt(h.slice(4,6), 16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  function buildColors(keys) {
+    // распределяем оттенки по кругу
+    const n = Math.max(keys.length, 1);
+    const map = {};
+    for (let i = 0; i < keys.length; i++) {
+      const h = Math.round((360 * i) / n);
+      map[keys[i]] = hslToHex(h, 75, 45);
+    }
+    return map;
+  }
+
+  function renderLegendDynamic(keys, colorByKey, showAreas) {
+    if (!els.legendDynamic) return;
+    els.legendDynamic.innerHTML = "";
+
+    // динамика нужна только если есть разные ответы
+    if (!keys || keys.length <= 1) return;
+
+    const title = document.createElement("div");
+    title.className = "small";
+    title.innerHTML = "<b>Ответ (unit1):</b>";
+    els.legendDynamic.appendChild(title);
+
+    for (const k of keys) {
+      const c = colorByKey[k] || "#377eb8";
+      const row = document.createElement("div");
+      row.className = "legend-item";
+
+      const icons = document.createElement("span");
+      icons.className = "legend-inline-icons";
+
+      const img = document.createElement("img");
+      img.className = "legend-pin-img";
+      img.alt = "";
+      img.src = pinDataUri(c);
+
+      icons.appendChild(img);
+
+      if (showAreas) {
+        const sw = document.createElement("span");
+        sw.className = "legend-area-swatch";
+        sw.style.setProperty("--c", c);
+        sw.style.setProperty("--bg", hexToRgba(c, 0.18));
+        icons.appendChild(sw);
+      }
+
+      const label = document.createElement("span");
+      label.className = "small";
+      label.innerHTML = esc(k);
+
+      row.appendChild(icons);
+      row.appendChild(label);
+      els.legendDynamic.appendChild(row);
+    }
+  }
+
+  function popupHtmlForGroup(g) {
+    let html = `<div style="min-width:280px;max-height:300px;overflow-y:auto;">`;
+    html += `<div><b>${esc(g.settlement || "(без названия)")}</b></div>`;
+    html += `<div class="small">${esc(g.region)}${g.district ? (", " + esc(g.district)) : ""}</div>`;
+    html += `<hr style="margin:6px 0">`;
+
+    for (let i = 0; i < g.items.length; i++) {
+      const x = g.items[i];
+      html += `<div style="margin-bottom:8px;">`;
+      html += `<div><b>${i+1}. ${esc(x.question)}</b></div>`;
+      html += `<div>Ответ 1: ${esc(x.unit1)}</div>`;
+      html += `<div>Ответ 2: ${esc(x.unit2)}</div>`;
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  function popupHtmlSingle(x) {
+    return (
+      `<div style="min-width:240px">` +
+      `<div><b>${esc(x.settlement || "")}</b></div>` +
+      `<div class="small">${esc(x.region)}${x.district ? (", " + esc(x.district)) : ""}</div>` +
+      `<hr style="margin:6px 0">` +
+      `<div><b>${esc(x.question)}</b></div>` +
+      `<div>Ответ 1: ${esc(x.unit1)}</div>` +
+      `<div>Ответ 2: ${esc(x.unit2)}</div>` +
+      `</div>`
+    );
+  }
+
+  function groupBySettlement(rows) {
+    const m = new Map();
+    for (const x of rows) {
+      const key = [
+        (x.region || "").toLowerCase().trim(),
+        (x.district || "").toLowerCase().trim(),
+        (x.settlement || "").toLowerCase().trim()
+      ].join("|||");
+
+      if (!m.has(key)) {
+        m.set(key, {
+          region: x.region,
+          district: x.district,
+          settlement: x.settlement,
+          lat: x.lat,
+          lon: x.lon,
+          items: []
+        });
+      }
+      m.get(key).items.push(x);
+    }
+
+    const out = Array.from(m.values());
+    for (const g of out) {
+      g.items.sort((a,b) => (a.question || "").localeCompare((b.question || ""), "ru"));
+    }
+    out.sort((a,b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
+    return out;
+  }
+
+  function buildAreas(rows, colorByKey) {
+    areasLayer.clearLayers();
+
+    const q = (els.q && els.q.value) ? els.q.value.trim() : "";
+    if (!q) return; // ареалы только для конкретного вопроса
+    if (!window.turf) return;
+
+    // точки по каждому unit1, с дедупликацией по нас.пункту
+    const by = new Map();
+    for (const r of rows) {
+      const key = answerKey(r);
+      if (!by.has(key)) by.set(key, new Map());
+
+      const placeKey = [
+        (r.region||"").toLowerCase().trim(),
+        (r.district||"").toLowerCase().trim(),
+        (r.settlement||"").toLowerCase().trim()
+      ].join("|||");
+
+      by.get(key).set(placeKey, r);
+    }
+
+    for (const [k, places] of by.entries()) {
+      const pts = Array.from(places.values());
+      if (!pts.length) continue;
+
+      const color = colorByKey[k] || "#377eb8";
+      const fill = hexToRgba(color, 0.18);
+
+      // 1 точка: круг
+      if (pts.length === 1) {
+        const p = pts[0];
+        L.circle([p.lat, p.lon], {
+          radius: 7000,
+          color, weight: 2,
+          fillColor: color, fillOpacity: 0.12
+        }).bindPopup(`<b>Ареал</b><br>${esc(k)}<br>Точек: 1`).addTo(areasLayer);
+        continue;
+      }
+
+      // 2 точки: линия+буфер
+      if (pts.length === 2) {
+        const coords = pts.map(p => [p.lon, p.lat]);
+        const line = turf.lineString(coords);
+        const poly = turf.buffer(line, 7, { units: "kilometers" });
+        L.geoJSON(poly, {
+          style: { color, weight: 2, fillColor: color, fillOpacity: 0.12 }
+        }).bindPopup(`<b>Ареал</b><br>${esc(k)}<br>Точек: 2`).addTo(areasLayer);
+        continue;
+      }
+
+      // 3+ точек: convex hull + буфер
+      const fc = turf.featureCollection(pts.map(p => turf.point([p.lon, p.lat])));
+      const hull = turf.convex(fc);
+
+      if (!hull) continue;
+
+      const buffered = turf.buffer(hull, 7, { units: "kilometers" });
+      L.geoJSON(buffered, {
+        style: { color, weight: 2, fillColor: color, fillOpacity: 0.12 }
+      }).bindPopup(`<b>Ареал</b><br>${esc(k)}<br>Точек: ${pts.length}`).addTo(areasLayer);
+    }
+  }
+
+  function getFilteredRows() {
+    const q = els.q.value, u1 = els.unit1.value, u2 = els.unit2.value;
+    const r = els.region.value, d = els.district.value, s = els.settlement.value;
+
+    return ALL.filter(x =>
+      (!q || x.question === q) &&
+      (!u1 || x.unit1 === u1) &&
+      (!u2 || x.unit2 === u2) &&
+      (!r || x.region === r) &&
+      (!d || x.district === d) &&
+      (!s || x.settlement === s)
+    );
+  }
+
+  function render() {
+    const rows = getFilteredRows();
+
+    markersLayer.clearLayers();
+    areasLayer.clearLayers();
+    els.list.innerHTML = "";
+    if (els.legendDynamic) els.legendDynamic.innerHTML = "";
+
+    if (!rows.length) {
+      setStatus(`Показано: 0 из ${ALL.length}`);
+      els.list.innerHTML = '<div class="small">Нет результатов.</div>';
+      return;
+    }
+
+    const qSelected = !!(els.q.value && els.q.value.trim());
+    const keys = qSelected ? uniq(rows.map(answerKey)) : [];
+    const colorByKey = buildColors(keys);
+
+    // легенда: показывать динамику только когда q выбран и есть >1 цвета
+    renderLegendDynamic(keys, colorByKey, /*showAreas*/ qSelected);
+
+    // ареалы: только при выбранном вопросе
+    if (qSelected) buildAreas(rows, colorByKey);
+
+    const groups = groupBySettlement(rows);
+    setStatus(`Пунктов: ${groups.length} · Записей: ${rows.length} (всего: ${ALL.length})`);
+
+    for (const g of groups) {
+      let icon = null;
+
+      if (qSelected) {
+        // если вдруг в одном пункте несколько разных unit1 — сделаем чёрный
+        const set = new Set(g.items.map(answerKey));
+        const one = (set.size === 1) ? Array.from(set)[0] : "(смеш.)";
+        const color = (set.size === 1) ? (colorByKey[one] || "#377eb8") : "#222222";
+        icon = makePinIcon(color);
+      } else {
+        // общий режим: синий пин
+        icon = makePinIcon("#2A81CB");
+      }
+
+      const m = L.marker([g.lat, g.lon], { icon }).addTo(markersLayer);
+
+      if (g.items.length === 1) m.bindPopup(popupHtmlSingle(g.items[0]));
+      else m.bindPopup(popupHtmlForGroup(g));
+
+      const row = document.createElement("div");
+      row.className = "row";
+
+      if (g.items.length === 1) {
+        const x = g.items[0];
+        row.innerHTML =
+          `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div>` +
+          `<div class="small">${esc(x.region)}${x.district ? (" · " + esc(x.district)) : ""} · ${esc(x.unit1)} / ${esc(x.unit2)}</div>`;
+      } else {
+        row.innerHTML =
+          `<div><b>${esc(g.settlement)}</b> — ${g.items.length} запис(ей)</div>` +
+          `<div class="small">${esc(g.region)}${g.district ? (" · " + esc(g.district)) : ""}</div>`;
+      }
+
+      // не зумим, только центр + popup
+      row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
+      els.list.appendChild(row);
     }
   }
 
@@ -212,122 +538,6 @@
     };
   }
 
-  function getFilteredRows() {
-    const q = els.q.value, u1 = els.unit1.value, u2 = els.unit2.value;
-    const r = els.region.value, d = els.district.value, s = els.settlement.value;
-
-    return ALL.filter(x =>
-      (!q || x.question === q) &&
-      (!u1 || x.unit1 === u1) &&
-      (!u2 || x.unit2 === u2) &&
-      (!r || x.region === r) &&
-      (!d || x.district === d) &&
-      (!s || x.settlement === s)
-    );
-  }
-
-  function groupBySettlement(rows) {
-    const m = new Map();
-    for (const x of rows) {
-      const key = [
-        (x.region || "").toLowerCase().trim(),
-        (x.district || "").toLowerCase().trim(),
-        (x.settlement || "").toLowerCase().trim()
-      ].join("|||");
-
-      if (!m.has(key)) {
-        m.set(key, {
-          region: x.region,
-          district: x.district,
-          settlement: x.settlement,
-          lat: x.lat,
-          lon: x.lon,
-          items: []
-        });
-      }
-      m.get(key).items.push(x);
-    }
-
-    const out = Array.from(m.values());
-    for (const g of out) {
-      g.items.sort((a,b) => (a.question || "").localeCompare((b.question || ""), "ru"));
-    }
-    out.sort((a,b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
-    return out;
-  }
-
-  function popupHtmlForGroup(g) {
-    let html = `<div style="min-width:280px;max-height:300px;overflow-y:auto;">`;
-    html += `<div><b>${esc(g.settlement || "(без названия)")}</b></div>`;
-    html += `<div class="small">${esc(g.region)}${g.district ? (", " + esc(g.district)) : ""}</div>`;
-    html += `<hr style="margin:6px 0">`;
-
-    for (let i = 0; i < g.items.length; i++) {
-      const x = g.items[i];
-      html += `<div style="margin-bottom:8px;">`;
-      html += `<div><b>${i+1}. ${esc(x.question)}</b></div>`;
-      html += `<div>Ответ 1: ${esc(x.unit1)}</div>`;
-      html += `<div>Ответ 2: ${esc(x.unit2)}</div>`;
-      html += `</div>`;
-    }
-
-    html += `</div>`;
-    return html;
-  }
-
-  function popupHtmlSingle(x) {
-    return (
-      `<div style="min-width:240px">` +
-      `<div><b>${esc(x.settlement || "")}</b></div>` +
-      `<div class="small">${esc(x.region)}${x.district ? (", " + esc(x.district)) : ""}</div>` +
-      `<hr style="margin:6px 0">` +
-      `<div><b>${esc(x.question)}</b></div>` +
-      `<div>Ответ 1: ${esc(x.unit1)}</div>` +
-      `<div>Ответ 2: ${esc(x.unit2)}</div>` +
-      `</div>`
-    );
-  }
-
-  function render() {
-    const rows = getFilteredRows();
-
-    markersLayer.clearLayers();
-    els.list.innerHTML = "";
-
-    if (!rows.length) {
-      setStatus(`Показано: 0 из ${ALL.length}`);
-      els.list.innerHTML = '<div class="small">Нет результатов.</div>';
-      return;
-    }
-
-    const groups = groupBySettlement(rows);
-    setStatus(`Пунктов: ${groups.length} · Записей: ${rows.length} (всего: ${ALL.length})`);
-
-    for (const g of groups) {
-      const m = L.marker([g.lat, g.lon]).addTo(markersLayer);
-
-      if (g.items.length === 1) m.bindPopup(popupHtmlSingle(g.items[0]));
-      else m.bindPopup(popupHtmlForGroup(g));
-
-      const row = document.createElement("div");
-      row.className = "row";
-
-      if (g.items.length === 1) {
-        const x = g.items[0];
-        row.innerHTML =
-          `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div>` +
-          `<div class="small">${esc(x.region)}${x.district ? (" · " + esc(x.district)) : ""} · ${esc(x.unit1)} / ${esc(x.unit2)}</div>`;
-      } else {
-        row.innerHTML =
-          `<div><b>${esc(g.settlement)}</b> — ${g.items.length} запис(ей)</div>` +
-          `<div class="small">${esc(g.region)}${g.district ? (" · " + esc(g.district)) : ""}</div>`;
-      }
-
-      row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
-      els.list.appendChild(row);
-    }
-  }
-
   async function prepareAdd() {
     setAddStatus("Ищу координаты...");
     els.add_result.innerHTML = "";
@@ -412,6 +622,15 @@
       setAddStatus("Ошибка");
       els.add_result.textContent = String(e);
     }
+  }
+
+  // базовый значок в легенде (синий)
+  if (els.legendPinBase) {
+    const img = document.createElement("img");
+    img.className = "legend-pin-img";
+    img.alt = "";
+    img.src = pinDataUri("#2A81CB");
+    els.legendPinBase.appendChild(img);
   }
 
   els.add_prepare.onclick = prepareAdd;
