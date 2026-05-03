@@ -47,10 +47,15 @@
   map.createPane("areasPane");    map.getPane("areasPane").style.zIndex = 350;
   map.createPane("boundaryPane"); map.getPane("boundaryPane").style.zIndex = 450;
 
-  const osmAttribution = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: osmAttribution
+  // Светлая карта БЕЗ рельефа, с водой
+  const cartoAttr =
+    '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' +
+    ' &copy; <a target="_blank" rel="noopener" href="https://carto.com/attributions">CARTO</a>';
+
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 20,
+    attribution: cartoAttr,
+    subdomains: "abcd"
   }).addTo(map);
 
   if (map.attributionControl && map.attributionControl.setPrefix) {
@@ -138,7 +143,6 @@
     }
   }
 
-  // ===== SVG pin icons =====
   function pinSvg(color) {
     return `
 <svg xmlns="http://www.w3.org/2000/svg" width="25" height="41" viewBox="0 0 25 41">
@@ -367,14 +371,41 @@
     }
   }
 
+  // ===== новая логика фильтрации unit1/unit2 =====
+  function rowMatchesAnswerFilters(row, a1, a2) {
+    const v1 = (row.unit1 || "").trim();
+    const v2 = (row.unit2 || "").trim();
+
+    const x1 = (a1 || "").trim();
+    const x2 = (a2 || "").trim();
+
+    // ничего не задано
+    if (!x1 && !x2) return true;
+
+    // задано одно значение -> ищем его в любом из двух unit
+    if (x1 && !x2) {
+      return v1 === x1 || v2 === x1;
+    }
+    if (!x1 && x2) {
+      return v1 === x2 || v2 === x2;
+    }
+
+    // заданы два значения -> оба должны присутствовать в паре unit1/unit2
+    const vals = [v1, v2];
+    return vals.includes(x1) && vals.includes(x2);
+  }
+
   function getFilteredRows() {
-    const q = els.q.value, u1 = els.unit1.value, u2 = els.unit2.value;
-    const r = els.region.value, d = els.district.value, s = els.settlement.value;
+    const q = els.q.value;
+    const a1 = els.unit1.value;
+    const a2 = els.unit2.value;
+    const r = els.region.value;
+    const d = els.district.value;
+    const s = els.settlement.value;
 
     return ALL.filter(x =>
       (!q || x.question === q) &&
-      (!u1 || x.unit1 === u1) &&
-      (!u2 || x.unit2 === u2) &&
+      rowMatchesAnswerFilters(x, a1, a2) &&
       (!r || x.region === r) &&
       (!d || x.district === d) &&
       (!s || x.settlement === s)
@@ -458,8 +489,13 @@
     fillSelect(els.region, uniq(ALL.map(x => x.region)), "Все регионы");
     fillSelect(els.district, [], "Все районы");
     fillSelect(els.settlement, [], "Все населённые пункты");
-    fillSelect(els.unit1, [], "Все unit1");
-    fillSelect(els.unit2, [], "Все unit2");
+
+    // ВАЖНО: списки ответов наполняем общими значениями из ОБОИХ unit
+    const allAnswers = uniq(
+      ALL.flatMap(x => [x.unit1, x.unit2]).filter(Boolean)
+    );
+    fillSelect(els.unit1, allAnswers, "Все ответы");
+    fillSelect(els.unit2, allAnswers, "Все ответы");
 
     fillDatalist(els.dlRegions, uniq(ALL.map(x => x.region)));
     fillDatalist(els.dlDistricts, uniq(ALL.map(x => x.district)));
@@ -487,8 +523,14 @@
     if (els.q) {
       els.q.addEventListener("change", () => {
         const q = els.q.value;
-        fillSelect(els.unit1, uniq(ALL.filter(x => !q || x.question === q).map(x => x.unit1)), "Все unit1");
-        fillSelect(els.unit2, uniq(ALL.filter(x => !q || x.question === q).map(x => x.unit2)), "Все unit2");
+        const answers = uniq(
+          ALL
+            .filter(x => !q || x.question === q)
+            .flatMap(x => [x.unit1, x.unit2])
+            .filter(Boolean)
+        );
+        fillSelect(els.unit1, answers, "Все ответы");
+        fillSelect(els.unit2, answers, "Все ответы");
       });
     }
 
@@ -496,15 +538,17 @@
 
     if (els.reset) {
       els.reset.onclick = () => {
-        els.q.value = ""; els.unit1.value = ""; els.unit2.value = "";
-        els.region.value = ""; els.district.value = ""; els.settlement.value = "";
+        els.q.value = "";
+        els.unit1.value = "";
+        els.unit2.value = "";
+        els.region.value = "";
+        els.district.value = "";
+        els.settlement.value = "";
         map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
         render();
       };
     }
   }
-
-  // ===== Добавление населённых пунктов (восстановлено) =====
 
   async function prepareAdd() {
     setAddStatus("Ищу координаты...");
@@ -513,11 +557,11 @@
     LAST_ADD_ROW = null;
 
     const reg = (els.add_region?.value || "").trim();
-    let dist = (els.add_district?.value || "").trim(); // можно пустым
+    let dist = (els.add_district?.value || "").trim();
     const setl = (els.add_settlement?.value || "").trim();
     const ques = (els.add_question?.value || "").trim();
     const u1 = (els.add_unit1?.value || "").trim();
-    const u2 = (els.add_unit2?.value || "").trim();    // необязательно
+    const u2 = (els.add_unit2?.value || "").trim();
 
     if (!reg || !setl || !ques || !u1) {
       setAddStatus("Заполни: регион, населённый пункт, вопрос, unit1");
@@ -525,7 +569,6 @@
     }
 
     const query = [setl, dist, reg, "Россия"].filter(Boolean).join(", ");
-
     const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
     const j = await r.json();
 
@@ -536,7 +579,6 @@
       return;
     }
 
-    // автоподстановка района
     if (!dist && j.district) {
       dist = String(j.district).trim();
       if (els.add_district) els.add_district.value = dist;
@@ -583,8 +625,6 @@
       setAddStatus("Успешно!");
       if (els.add_result) els.add_result.innerHTML = "Запись добавлена в таблицу.";
       LAST_ADD_ROW = null;
-
-      // попробуем обновить данные (в таблице/CSV может быть задержка)
       setTimeout(() => loadData().catch(() => {}), 1500);
       return;
     }
@@ -596,7 +636,6 @@
     if (els.add_send) els.add_send.disabled = false;
   }
 
-  // базовый значок в легенде (синий)
   if (els.legendPinBase) {
     const img = document.createElement("img");
     img.className = "legend-pin-img";
