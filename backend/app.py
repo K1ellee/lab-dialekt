@@ -17,19 +17,16 @@ APP_MAX_MB = 20
 FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
 MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "/app/models/vosk-model-small-ru-0.22")
 
-# Apps Script Web App (ставится в Render -> Environment)
 SHEET_APPEND_URL = (os.environ.get("SHEET_APPEND_URL") or "").strip()
 SHEET_APPEND_TOKEN = (os.environ.get("SHEET_APPEND_TOKEN") or "").strip()
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)
-
 app.config["MAX_CONTENT_LENGTH"] = APP_MAX_MB * 1024 * 1024
 
 model = Model(MODEL_PATH)
 
 _GEOCODE_CACHE = {}
-_BOUNDARY_CACHE = None
 
 def run_ffmpeg_to_wav16k_mono(src_path: str, dst_path: str):
     cmd = [FFMPEG, "-y", "-i", src_path, "-ac", "1", "-ar", "16000", "-vn", dst_path]
@@ -113,7 +110,6 @@ def _ipa_token_to_rus(tok: str) -> str:
 
 def phonetics_two_lines(text: str):
     t = (text or "").strip().lower()
-
     ipa_blocks = []
     rus_blocks = []
 
@@ -128,7 +124,6 @@ def phonetics_two_lines(text: str):
             else:
                 ipa_blocks.append("?")
                 rus_blocks.append("?")
-
         ipa_blocks.append("‖")
         rus_blocks.append("‖")
 
@@ -142,7 +137,10 @@ def phonetics_two_lines(text: str):
     return ipa, rus
 
 def _http_get_json(url: str, timeout_s: int = 20):
-    req = Request(url, headers={"User-Agent": "lab-dialekt/1.0 (Render Flask demo)"})
+    req = Request(url, headers={
+        "User-Agent": "lab-dialekt/1.0 (Render Flask demo)",
+        "Accept-Language": "ru"
+    })
     raw = urlopen(req, timeout=timeout_s).read().decode("utf-8", errors="replace")
     return json.loads(raw)
 
@@ -151,8 +149,10 @@ def _http_post_json(url: str, payload: dict, timeout_s: int = 25):
     req = Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json; charset=utf-8",
-                 "User-Agent": "lab-dialekt/1.0 (Render Flask demo)"},
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "User-Agent": "lab-dialekt/1.0 (Render Flask demo)"
+        },
         method="POST",
     )
     raw = urlopen(req, timeout=timeout_s).read().decode("utf-8", errors="replace")
@@ -162,10 +162,6 @@ def _http_post_json(url: str, payload: dict, timeout_s: int = 25):
         return {"ok": False, "error": "Apps Script returned non-JSON", "raw": raw[:500]}
 
 def _extract_district(address: dict) -> str:
-    """
-    Nominatim addressdetails может возвращать район в разных полях.
-    Для РФ чаще всего подходит county (район), но иногда приходят state_district/municipality.
-    """
     if not isinstance(address, dict):
         return ""
     for k in ("county", "state_district", "municipality", "city_district"):
@@ -173,6 +169,114 @@ def _extract_district(address: dict) -> str:
         if v and str(v).strip():
             return str(v).strip()
     return ""
+
+def _normalize_settlement_name(name: str) -> list[str]:
+    """
+    Возвращает несколько вариантов названия населённого пункта:
+    - как есть
+    - без служебных слов
+    - с сокращениями/вариантами
+    """
+    src = (name or "").strip()
+    if not src:
+        return []
+
+    variants = [src]
+
+    x = src
+    # убираем тип населённого пункта в начале
+    x = re.sub(r"^(деревня|д\.|село|пос[её]лок|п\.|пгт|город|г\.)\s+", "", x, flags=re.I).strip()
+    if x and x not in variants:
+        variants.append(x)
+
+    return variants
+
+def _search_nominatim_query(q: str):
+    params = {
+        "format": "json",
+        "limit": "5",
+        "q": q,
+        "addressdetails": "1",
+        "accept-language": "ru"
+    }
+    url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
+    return _http_get_json(url, timeout_s=15)
+
+def _score_result(item: dict, wanted_region: str = "", wanted_district: str = "") -> int:
+    """
+    Небольшое ранжирование:
+    - совпал регион -> +3
+    - совпал район -> +2
+    """
+    score = 0
+    addr = item.get("address") or {}
+    display = (item.get("display_name") or "").lower()
+
+    wr = (wanted_region or "").strip().lower()
+    wd = (wanted_district or "").strip().lower()
+
+    if wr:
+        if wr in display or wr in " ".join(str(v).lower() for v in addr.values()):
+            score += 3
+
+    if wd:
+        if wd in display or wd in " ".join(str(v).lower() for v in addr.values()):
+            score += 2
+
+    return score
+
+def _find_best_geocode(settlement: str, district: str, region: str):
+    """
+    Ищем в несколько попыток:
+    1) settlement, district, region, Россия
+    2) settlement, region, Россия
+    3) settlement, Россия
+    Для settlement используем несколько вариантов названия.
+    """
+    variants = _normalize_settlement_name(settlement)
+    queries = []
+
+    for s in variants:
+        if district and region:
+            queries.append(", ".join([s, district, region, "Россия"]))
+        if region:
+            queries.append(", ".join([s, region, "Россия"]))
+        queries.append(", ".join([s, "Россия"]))
+
+    # убрать дубли, сохраняя порядок
+    seen = set()
+    uniq_queries = []
+    for q in queries:
+        if q not in seen:
+            seen.add(q)
+            uniq_queries.append(q)
+
+    best_item = None
+    best_query = None
+    best_score = -10**9
+
+    for q in uniq_queries:
+        try:
+            data = _search_nominatim_query(q)
+        except Exception:
+            continue
+
+        if not data:
+            continue
+
+        for item in data:
+            score = _score_result(item, wanted_region=region, wanted_district=district)
+            # бонус за наличие house/road не даём, нас интересуют населённые пункты
+            if score > best_score:
+                best_score = score
+                best_item = item
+                best_query = q
+
+        # если нашли хороший результат с совпадением региона — можно не перебирать слишком долго
+        if best_score >= 3 and best_item is not None:
+            break
+
+    return best_item, best_query
 
 @app.get("/")
 def page_index():
@@ -192,83 +296,44 @@ def api_geocode():
     if not q:
         return jsonify({"ok": False, "error": "Параметр q пустой"}), 400
 
-    if q in _GEOCODE_CACHE:
-        return jsonify(_GEOCODE_CACHE[q])
+    # Пытаемся вытащить settlement/district/region из строки, которую шлёт фронт:
+    # "settlement, district, region, Россия" или подобное
+    parts = [p.strip() for p in q.split(",") if p.strip()]
+    settlement = parts[0] if len(parts) >= 1 else ""
+    district = parts[1] if len(parts) >= 3 else ""   # если формат: settl, district, region, Россия
+    region = parts[2] if len(parts) >= 3 else (parts[1] if len(parts) >= 2 else "")
 
-    params = {
-        "format": "json",
-        "limit": "1",
-        "q": q,
-        "addressdetails": "1"  # <-- важно для автоподстановки района
-    }
-    url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
+    cache_key = f"{settlement}|{district}|{region}"
+    if cache_key in _GEOCODE_CACHE:
+        return jsonify(_GEOCODE_CACHE[cache_key])
 
     try:
-        data = _http_get_json(url, timeout_s=12)
+        item, used_query = _find_best_geocode(settlement, district, region)
     except Exception as e:
         resp = {"ok": False, "error": "Ошибка геокодирования", "details": str(e)}
-        _GEOCODE_CACHE[q] = resp
+        _GEOCODE_CACHE[cache_key] = resp
         return jsonify(resp), 502
 
-    if not data:
-        name = q.split(",")[0].strip()
+    if not item:
+        name = settlement or q.split(",")[0].strip()
         wiki = "https://ru.wikipedia.org/wiki/" + quote(name.replace(" ", "_"))
         resp = {"ok": False, "error": "Координаты не найдены", "wiki": wiki}
-        _GEOCODE_CACHE[q] = resp
+        _GEOCODE_CACHE[cache_key] = resp
         return jsonify(resp)
 
-    item = data[0]
     address = item.get("address") or {}
-    district = _extract_district(address)
+    district_found = _extract_district(address)
 
     resp = {
         "ok": True,
         "lat": float(item["lat"]),
         "lon": float(item["lon"]),
         "display_name": item.get("display_name", ""),
-        "district": district,
+        "district": district_found,
+        "used_query": used_query or q
     }
-    _GEOCODE_CACHE[q] = resp
+    _GEOCODE_CACHE[cache_key] = resp
     return jsonify(resp)
-
-@app.get("/api/boundary/udmurtia")
-def api_boundary_udmurtia():
-    global _BOUNDARY_CACHE
-    if _BOUNDARY_CACHE is not None:
-        return jsonify(_BOUNDARY_CACHE)
-
-    params = {
-        "format": "json",
-        "limit": "1",
-        "q": "Удмуртская Республика",
-        "polygon_geojson": "1"
-    }
-    url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
-
-    try:
-        data = _http_get_json(url, timeout_s=20)
-        if not data:
-            return jsonify({"ok": False, "error": "Boundary not found"}), 404
-
-        geo = data[0].get("geojson")
-        if not geo:
-            return jsonify({"ok": False, "error": "No geojson in response"}), 502
-
-        fc = {
-            "type": "FeatureCollection",
-            "features": [{
-                "type": "Feature",
-                "properties": {
-                    "name": "Удмуртская Республика",
-                    "display_name": data[0].get("display_name", "")
-                },
-                "geometry": geo
-            }]
-        }
-        _BOUNDARY_CACHE = fc
-        return jsonify(fc)
-    except Exception as e:
-        return jsonify({"ok": False, "error": "Boundary fetch failed", "details": str(e)}), 502
 
 @app.post("/api/sheet_append")
 def api_sheet_append():
@@ -280,7 +345,6 @@ def api_sheet_append():
 
     payload = request.get_json(silent=True) or {}
 
-    # unit2 и district не обязательны
     required = ["region", "settlement", "question", "unit1", "lat", "lon"]
     missing = [k for k in required if not str(payload.get(k, "")).strip()]
     if missing:
