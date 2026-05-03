@@ -52,10 +52,9 @@
     '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' +
     ' &copy; <a target="_blank" rel="noopener" href="https://carto.com/attributions">CARTO</a>';
 
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    maxZoom: 20,
-    attribution: cartoAttr,
-    subdomains: "abcd"
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: osmAttr
   }).addTo(map);
 
   if (map.attributionControl && map.attributionControl.setPrefix) {
@@ -650,3 +649,4 @@
   loadBoundary();
   loadData().catch(e => { setStatus("Ошибка загрузки"); console.error(e); });
 })();
+
