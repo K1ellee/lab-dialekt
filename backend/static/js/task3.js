@@ -8,7 +8,9 @@
     list: $("list"),
 
     q: $("q"),
-    answers: $("answers"),
+    answersText: $("answersText"),
+    dlFilterAnswers: $("dlFilterAnswers"),
+
     region: $("region"),
     district: $("district"),
     settlement: $("settlement"),
@@ -50,7 +52,6 @@
   map.getPane("boundaryPane").style.zIndex = 450;
 
   const osmAttr = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: osmAttr
@@ -111,9 +112,7 @@
       sel.appendChild(o);
     }
 
-    if (multiple && size) {
-      sel.size = size;
-    }
+    if (multiple && size) sel.size = size;
   }
 
   function fillDatalist(dl, values) {
@@ -145,7 +144,6 @@
       const gj = await r.json();
 
       if (boundaryLayer) boundaryLayer.remove();
-
       boundaryLayer = L.geoJSON(gj, {
         pane: "boundaryPane",
         interactive: false,
@@ -192,30 +190,19 @@
   }
 
   function hslToHex(h, s, l) {
-    s /= 100;
-    l /= 100;
+    s /= 100; l /= 100;
     const c = (1 - Math.abs(2 * l - 1)) * s;
     const x = c * (1 - Math.abs((h / 60) % 2 - 1));
     const m = l - c / 2;
     let r = 0, g = 0, b = 0;
-
     if (0 <= h && h < 60) { r = c; g = x; b = 0; }
     else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
     else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
     else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
     else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
     else { r = c; g = 0; b = x; }
-
     const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
     return "#" + toHex(r) + toHex(g) + toHex(b);
-  }
-
-  function hexToRgba(hex, a) {
-    const h = hex.replace("#", "");
-    const r = parseInt(h.slice(0, 2), 16);
-    const g = parseInt(h.slice(2, 4), 16);
-    const b = parseInt(h.slice(4, 6), 16);
-    return `rgba(${r},${g},${b},${a})`;
   }
 
   function buildColors(keys) {
@@ -226,6 +213,14 @@
       map[keys[i]] = hslToHex(h, 75, 45);
     }
     return map;
+  }
+
+  function hexToRgba(hex, a) {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
   }
 
   function renderLegendDynamic(keys, colorByKey, showAreas) {
@@ -271,41 +266,8 @@
     }
   }
 
-  function popupHtmlForGroup(g) {
-    let html = `<div style="min-width:280px;max-height:300px;overflow-y:auto;">`;
-    html += `<div><b>${esc(g.settlement || "(без названия)")}</b></div>`;
-    html += `<div class="small">${esc(g.region)}${g.district ? (", " + esc(g.district)) : ""}</div>`;
-    html += `<hr style="margin:6px 0">`;
-
-    for (let i = 0; i < g.items.length; i++) {
-      const x = g.items[i];
-      const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
-      html += `<div style="margin-bottom:8px;">`;
-      html += `<div><b>${i + 1}. ${esc(x.question)}</b></div>`;
-      html += `<div>${esc(answerText)}</div>`;
-      html += `</div>`;
-    }
-
-    html += `</div>`;
-    return html;
-  }
-
-  function popupHtmlSingle(x) {
-    const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
-    return (
-      `<div style="min-width:240px">` +
-      `<div><b>${esc(x.settlement || "")}</b></div>` +
-      `<div class="small">${esc(x.region)}${x.district ? (", " + esc(x.district)) : ""}</div>` +
-      `<hr style="margin:6px 0">` +
-      `<div><b>${esc(x.question)}</b></div>` +
-      `<div>${esc(answerText)}</div>` +
-      `</div>`
-    );
-  }
-
   function groupBySettlement(rows) {
     const m = new Map();
-
     for (const x of rows) {
       const key = [
         (x.region || "").toLowerCase().trim(),
@@ -323,14 +285,11 @@
           items: []
         });
       }
-
       m.get(key).items.push(x);
     }
 
     const out = Array.from(m.values());
-    for (const g of out) {
-      g.items.sort((a, b) => (a.question || "").localeCompare((b.question || ""), "ru"));
-    }
+    for (const g of out) g.items.sort((a, b) => (a.question || "").localeCompare((b.question || ""), "ru"));
     out.sort((a, b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
     return out;
   }
@@ -340,7 +299,6 @@
     if (!questionsSelected.length || !window.turf) return;
 
     const by = new Map();
-
     for (const r of rows) {
       const key = answerKey(r);
       if (!by.has(key)) by.set(key, new Map());
@@ -357,7 +315,6 @@
     for (const [k, places] of by.entries()) {
       const pts = Array.from(places.values());
       if (!pts.length) continue;
-
       const color = colorByKey[k] || "#377eb8";
 
       if (pts.length === 1) {
@@ -396,23 +353,37 @@
     }
   }
 
-  function rowMatchesAnswers(row, selectedAnswers) {
-    if (!selectedAnswers.length) return true;
+  function parseAnswerTokens() {
+    const t = (els.answersText && els.answersText.value ? els.answersText.value : "").trim().toLowerCase();
+    if (!t) return [];
+    const parts = t.split(/[;,]+/g).map(x => x.trim()).filter(Boolean);
+    // уникальные
+    const s = new Set();
+    const out = [];
+    for (const p of parts) {
+      if (!s.has(p)) { s.add(p); out.push(p); }
+    }
+    return out;
+  }
 
-    const vals = [(row.unit1 || "").trim(), (row.unit2 || "").trim()];
-    return selectedAnswers.some(a => vals.includes(a));
+  function rowMatchesAnswersTyped(row, tokens) {
+    if (!tokens.length) return true;
+    const v1 = (row.unit1 || "").toLowerCase();
+    const v2 = (row.unit2 || "").toLowerCase();
+    // ИЛИ: хотя бы один токен встречается в unit1 или unit2 (по подстроке)
+    return tokens.some(tok => (v1.includes(tok) || v2.includes(tok)));
   }
 
   function getFilteredRows() {
     const questions = getSelectedValues(els.q);
-    const answers = getSelectedValues(els.answers);
+    const tokens = parseAnswerTokens();
     const r = els.region.value;
     const d = els.district.value;
     const s = els.settlement.value;
 
     return ALL.filter(x =>
       (!questions.length || questions.includes(x.question)) &&
-      rowMatchesAnswers(x, answers) &&
+      rowMatchesAnswersTyped(x, tokens) &&
       (!r || x.region === r) &&
       (!d || x.district === d) &&
       (!s || x.settlement === s)
@@ -459,8 +430,23 @@
 
       const m = L.marker([g.lat, g.lon], { icon }).addTo(markersLayer);
 
-      if (g.items.length === 1) m.bindPopup(popupHtmlSingle(g.items[0]));
-      else m.bindPopup(popupHtmlForGroup(g));
+      const popup = (g.items.length === 1)
+        ? (() => {
+            const x = g.items[0];
+            const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
+            return `<div style="min-width:240px"><b>${esc(x.settlement)}</b><hr style="margin:6px 0"><div><b>${esc(x.question)}</b></div><div>${esc(answerText)}</div></div>`;
+          })()
+        : (() => {
+            let html = `<div style="min-width:280px;max-height:300px;overflow-y:auto;"><b>${esc(g.settlement)}</b><hr style="margin:6px 0">`;
+            for (const x of g.items) {
+              const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
+              html += `<div style="margin-bottom:8px;"><div><b>${esc(x.question)}</b></div><div>${esc(answerText)}</div></div>`;
+            }
+            html += `</div>`;
+            return html;
+          })();
+
+      m.bindPopup(popup);
 
       if (els.list) {
         for (const item of g.items) {
@@ -502,7 +488,7 @@
     fillSelect(els.settlement, [], "Все населённые пункты");
 
     const allAnswers = uniq(ALL.flatMap(x => [x.unit1, x.unit2]).filter(Boolean));
-    fillSelect(els.answers, allAnswers, "", true, 8);
+    fillDatalist(els.dlFilterAnswers, allAnswers);
 
     fillDatalist(els.dlRegions, uniq(ALL.map(x => x.region)));
     fillDatalist(els.dlDistricts, uniq(ALL.map(x => x.district)));
@@ -536,7 +522,7 @@
             .flatMap(x => [x.unit1, x.unit2])
             .filter(Boolean)
         );
-        fillSelect(els.answers, answers, "", true, 8);
+        fillDatalist(els.dlFilterAnswers, answers);
       });
     }
 
@@ -545,7 +531,7 @@
     if (els.reset) {
       els.reset.onclick = () => {
         Array.from(els.q.options).forEach(o => o.selected = false);
-        Array.from(els.answers.options).forEach(o => o.selected = false);
+        if (els.answersText) els.answersText.value = "";
         els.region.value = "";
         els.district.value = "";
         els.settlement.value = "";
@@ -657,23 +643,9 @@
     els.legendPinMixed.appendChild(img);
   }
 
-  if (els.add_prepare) {
-    els.add_prepare.onclick = () => prepareAdd().catch(e => {
-      setAddStatus("Ошибка");
-      if (els.add_result) els.add_result.textContent = String(e);
-    });
-  }
-
-  if (els.add_send) {
-    els.add_send.onclick = () => sendAdd().catch(e => {
-      setAddStatus("Ошибка");
-      if (els.add_result) els.add_result.textContent = String(e);
-    });
-  }
+  if (els.add_prepare) els.add_prepare.onclick = () => prepareAdd().catch(e => { setAddStatus("Ошибка"); if (els.add_result) els.add_result.textContent = String(e); });
+  if (els.add_send) els.add_send.onclick = () => sendAdd().catch(e => { setAddStatus("Ошибка"); if (els.add_result) els.add_result.textContent = String(e); });
 
   loadBoundary();
-  loadData().catch(e => {
-    setStatus("Ошибка загрузки");
-    console.error(e);
-  });
+  loadData().catch(e => { setStatus("Ошибка загрузки"); console.error(e); });
 })();

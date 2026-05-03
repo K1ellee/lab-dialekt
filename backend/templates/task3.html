@@ -26,9 +26,11 @@
         <div class="small">Вопросы (можно выбрать несколько: Ctrl + клик)</div>
         <select id="q" multiple size="8"></select>
       </div>
+
       <div>
-        <div class="small">Ответы (можно выбрать несколько: Ctrl + клик)</div>
-        <select id="answers" multiple size="8"></select>
+        <div class="small">Ответы (ввод; можно несколько через ; или ,)</div>
+        <input id="answersText" list="dlFilterAnswers" placeholder="например: щас; сейчас">
+        <datalist id="dlFilterAnswers"></datalist>
       </div>
     </div>
 
