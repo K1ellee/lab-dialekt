@@ -23,13 +23,22 @@
 
     <div style="display:grid;grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
       <div>
-        <div class="small">Вопросы (можно выбрать несколько: Ctrl + клик)</div>
-        <select id="q" multiple size="8"></select>
+        <div class="small">Вопросы (выбор, Ctrl + клик)</div>
+        <select id="qSel" multiple size="8"></select>
+      </div>
+      <div>
+        <div class="small">Вопросы (ввод; можно несколько через ; или ,)</div>
+        <input id="qText" list="dlFilterQuestions" placeholder="например: ДАРЯ; ЛАРНГ">
+        <datalist id="dlFilterQuestions"></datalist>
       </div>
 
       <div>
+        <div class="small">Ответы (выбор, Ctrl + клик)</div>
+        <select id="aSel" multiple size="8"></select>
+      </div>
+      <div>
         <div class="small">Ответы (ввод; можно несколько через ; или ,)</div>
-        <input id="answersText" list="dlFilterAnswers" placeholder="например: щас; сейчас">
+        <input id="aText" list="dlFilterAnswers" placeholder="например: щас; сейчас">
         <datalist id="dlFilterAnswers"></datalist>
       </div>
     </div>

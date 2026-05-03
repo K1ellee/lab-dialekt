@@ -7,8 +7,12 @@
     status: $("status"),
     list: $("list"),
 
-    q: $("q"),
-    answersText: $("answersText"),
+    qSel: $("qSel"),
+    qText: $("qText"),
+    dlFilterQuestions: $("dlFilterQuestions"),
+
+    aSel: $("aSel"),
+    aText: $("aText"),
     dlFilterAnswers: $("dlFilterAnswers"),
 
     region: $("region"),
@@ -94,25 +98,43 @@
     return Array.from(select.selectedOptions || []).map(o => o.value).filter(Boolean);
   }
 
-  function fillSelect(sel, values, emptyLabel, multiple = false, size = null) {
+  function parseTokens(text) {
+    const t = (text || "").trim().toLowerCase();
+    if (!t) return [];
+    const parts = t.split(/[;,]+/g).map(x => x.trim()).filter(Boolean);
+    const seen = new Set();
+    const out = [];
+    for (const p of parts) {
+      if (!seen.has(p)) { seen.add(p); out.push(p); }
+    }
+    return out;
+  }
+
+  function fillSelect(sel, values, multiple = false, size = null) {
     if (!sel) return;
     sel.innerHTML = "";
-
-    if (!multiple) {
-      const first = document.createElement("option");
-      first.value = "";
-      first.textContent = emptyLabel || "— все —";
-      sel.appendChild(first);
-    }
-
     for (const v of values) {
       const o = document.createElement("option");
       o.value = v;
       o.textContent = v;
       sel.appendChild(o);
     }
-
     if (multiple && size) sel.size = size;
+  }
+
+  function fillSelectSingle(sel, values, emptyLabel) {
+    if (!sel) return;
+    sel.innerHTML = "";
+    const first = document.createElement("option");
+    first.value = "";
+    first.textContent = emptyLabel || "— все —";
+    sel.appendChild(first);
+    for (const v of values) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = v;
+      sel.appendChild(o);
+    }
   }
 
   function fillDatalist(dl, values) {
@@ -164,11 +186,7 @@
   <circle cx="12.5" cy="12.5" r="5.2" fill="#fff" fill-opacity="0.92"/>
 </svg>`.trim();
   }
-
-  function pinDataUri(color) {
-    return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(pinSvg(color));
-  }
-
+  function pinDataUri(color) { return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(pinSvg(color)); }
   function makePinIcon(color) {
     return L.icon({
       iconUrl: pinDataUri(color),
@@ -204,7 +222,6 @@
     const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
     return "#" + toHex(r) + toHex(g) + toHex(b);
   }
-
   function buildColors(keys) {
     const n = Math.max(keys.length, 1);
     const map = {};
@@ -214,7 +231,6 @@
     }
     return map;
   }
-
   function hexToRgba(hex, a) {
     const h = hex.replace("#", "");
     const r = parseInt(h.slice(0, 2), 16);
@@ -287,16 +303,14 @@
       }
       m.get(key).items.push(x);
     }
-
     const out = Array.from(m.values());
-    for (const g of out) g.items.sort((a, b) => (a.question || "").localeCompare((b.question || ""), "ru"));
     out.sort((a, b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
     return out;
   }
 
-  function buildAreas(rows, colorByKey, questionsSelected) {
+  function buildAreas(rows, colorByKey, allowAreas) {
     areasLayer.clearLayers();
-    if (!questionsSelected.length || !window.turf) return;
+    if (!allowAreas || !window.turf) return;
 
     const by = new Map();
     for (const r of rows) {
@@ -353,37 +367,39 @@
     }
   }
 
-  function parseAnswerTokens() {
-    const t = (els.answersText && els.answersText.value ? els.answersText.value : "").trim().toLowerCase();
-    if (!t) return [];
-    const parts = t.split(/[;,]+/g).map(x => x.trim()).filter(Boolean);
-    // уникальные
-    const s = new Set();
-    const out = [];
-    for (const p of parts) {
-      if (!s.has(p)) { s.add(p); out.push(p); }
-    }
-    return out;
+  // ===== Фильтры =====
+  function rowMatchesQuestion(row, qSelected, qTokens) {
+    if (!qSelected.length && !qTokens.length) return true;
+    const q = (row.question || "");
+    if (qSelected.includes(q)) return true;
+    const ql = q.toLowerCase();
+    return qTokens.some(t => ql.includes(t));
   }
 
-  function rowMatchesAnswersTyped(row, tokens) {
-    if (!tokens.length) return true;
-    const v1 = (row.unit1 || "").toLowerCase();
-    const v2 = (row.unit2 || "").toLowerCase();
-    // ИЛИ: хотя бы один токен встречается в unit1 или unit2 (по подстроке)
-    return tokens.some(tok => (v1.includes(tok) || v2.includes(tok)));
+  function rowMatchesAnswer(row, aSelected, aTokens) {
+    if (!aSelected.length && !aTokens.length) return true;
+    const u1 = (row.unit1 || "");
+    const u2 = (row.unit2 || "");
+    if (aSelected.includes(u1) || aSelected.includes(u2)) return true;
+    const u1l = u1.toLowerCase();
+    const u2l = u2.toLowerCase();
+    return aTokens.some(t => u1l.includes(t) || u2l.includes(t));
   }
 
   function getFilteredRows() {
-    const questions = getSelectedValues(els.q);
-    const tokens = parseAnswerTokens();
+    const qSelected = getSelectedValues(els.qSel);
+    const qTokens = parseTokens(els.qText?.value || "");
+
+    const aSelected = getSelectedValues(els.aSel);
+    const aTokens = parseTokens(els.aText?.value || "");
+
     const r = els.region.value;
     const d = els.district.value;
     const s = els.settlement.value;
 
     return ALL.filter(x =>
-      (!questions.length || questions.includes(x.question)) &&
-      rowMatchesAnswersTyped(x, tokens) &&
+      rowMatchesQuestion(x, qSelected, qTokens) &&
+      rowMatchesAnswer(x, aSelected, aTokens) &&
       (!r || x.region === r) &&
       (!d || x.district === d) &&
       (!s || x.settlement === s)
@@ -405,12 +421,25 @@
       return;
     }
 
-    const questionsSelected = getSelectedValues(els.q);
+    const qSelected = getSelectedValues(els.qSel);
+    const qTokens = parseTokens(els.qText?.value || "");
+    const questionFilterActive = (qSelected.length > 0 || qTokens.length > 0);
+
+    const aSelected = getSelectedValues(els.aSel);
+    const aTokens = parseTokens(els.aText?.value || "");
+    const answerFilterActive = (aSelected.length > 0 || aTokens.length > 0);
+
+    const themeActive = questionFilterActive || answerFilterActive;
+
     const keys = uniq(rows.map(answerKey));
     const colorByKey = buildColors(keys);
 
-    renderLegendDynamic(keys, colorByKey, questionsSelected.length > 0);
-    if (questionsSelected.length > 0) buildAreas(rows, colorByKey, questionsSelected);
+    // ареалы строим только если в результатах один вопрос (иначе ареалы смешаются)
+    const uniqQuestions = uniq(rows.map(x => x.question));
+    const allowAreas = themeActive && uniqQuestions.length === 1;
+
+    renderLegendDynamic(keys, colorByKey, allowAreas);
+    buildAreas(rows, colorByKey, allowAreas);
     if (boundaryLayer) boundaryLayer.bringToFront();
 
     const groups = groupBySettlement(rows);
@@ -419,7 +448,7 @@
     for (const g of groups) {
       let icon;
 
-      if (questionsSelected.length > 0) {
+      if (themeActive) {
         const set = new Set(g.items.map(answerKey));
         const one = (set.size === 1) ? Array.from(set)[0] : "(смеш.)";
         const color = (set.size === 1) ? (colorByKey[one] || "#377eb8") : "#222222";
@@ -430,32 +459,24 @@
 
       const m = L.marker([g.lat, g.lon], { icon }).addTo(markersLayer);
 
-      const popup = (g.items.length === 1)
-        ? (() => {
-            const x = g.items[0];
-            const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
-            return `<div style="min-width:240px"><b>${esc(x.settlement)}</b><hr style="margin:6px 0"><div><b>${esc(x.question)}</b></div><div>${esc(answerText)}</div></div>`;
-          })()
-        : (() => {
-            let html = `<div style="min-width:280px;max-height:300px;overflow-y:auto;"><b>${esc(g.settlement)}</b><hr style="margin:6px 0">`;
-            for (const x of g.items) {
-              const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
-              html += `<div style="margin-bottom:8px;"><div><b>${esc(x.question)}</b></div><div>${esc(answerText)}</div></div>`;
-            }
-            html += `</div>`;
-            return html;
-          })();
+      // popup: все записи пункта
+      let html = `<div style="min-width:280px;max-height:300px;overflow-y:auto;"><b>${esc(g.settlement)}</b><hr style="margin:6px 0">`;
+      for (const x of g.items) {
+        const ans = [x.unit1, x.unit2].filter(Boolean).join(" / ");
+        html += `<div style="margin-bottom:8px;"><div><b>${esc(x.question)}</b></div><div>${esc(ans)}</div></div>`;
+      }
+      html += `</div>`;
+      m.bindPopup(html);
 
-      m.bindPopup(popup);
-
+      // список: "Пункт — вопрос — ответ"
       if (els.list) {
-        for (const item of g.items) {
-          const answerText = [item.unit1, item.unit2].filter(Boolean).join(" / ");
+        for (const x of g.items) {
+          const ans = [x.unit1, x.unit2].filter(Boolean).join(" / ");
           const row = document.createElement("div");
           row.className = "row";
           row.innerHTML =
-            `<div><b>${esc(item.settlement)}</b> — ${esc(item.question)} — ${esc(answerText)}</div>` +
-            `<div class="small">${esc(item.region)}${item.district ? (" · " + esc(item.district)) : ""}</div>`;
+            `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)} — ${esc(ans)}</div>` +
+            `<div class="small">${esc(x.region)}${x.district ? (" · " + esc(x.district)) : ""}</div>`;
           row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
           els.list.appendChild(row);
         }
@@ -476,32 +497,36 @@
     const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
     ALL = (parsed.data || []).map(normalizeRow).filter(Boolean);
 
-    setStatus(`Загружено записей: ${ALL.length}`);
     initControlsFromData();
     render();
   }
 
   function initControlsFromData() {
-    fillSelect(els.q, uniq(ALL.map(x => x.question)), "", true, 8);
-    fillSelect(els.region, uniq(ALL.map(x => x.region)), "Все регионы");
-    fillSelect(els.district, [], "Все районы");
-    fillSelect(els.settlement, [], "Все населённые пункты");
+    const questions = uniq(ALL.map(x => x.question));
+    fillSelect(els.qSel, questions, true, 8);
+    fillDatalist(els.dlFilterQuestions, questions);
 
-    const allAnswers = uniq(ALL.flatMap(x => [x.unit1, x.unit2]).filter(Boolean));
-    fillDatalist(els.dlFilterAnswers, allAnswers);
+    const answers = uniq(ALL.flatMap(x => [x.unit1, x.unit2]).filter(Boolean));
+    fillSelect(els.aSel, answers, true, 8);
+    fillDatalist(els.dlFilterAnswers, answers);
+
+    fillSelectSingle(els.region, uniq(ALL.map(x => x.region)), "Все регионы");
+    fillSelectSingle(els.district, [], "Все районы");
+    fillSelectSingle(els.settlement, [], "Все населённые пункты");
 
     fillDatalist(els.dlRegions, uniq(ALL.map(x => x.region)));
     fillDatalist(els.dlDistricts, uniq(ALL.map(x => x.district)));
     fillDatalist(els.dlSettlements, uniq(ALL.map(x => x.settlement)));
-    fillDatalist(els.dlQuestions, uniq(ALL.map(x => x.question)));
+    fillDatalist(els.dlQuestions, questions);
     fillDatalist(els.dlUnit1, uniq(ALL.map(x => x.unit1)));
     fillDatalist(els.dlUnit2, uniq(ALL.map(x => x.unit2)));
 
+    // зависимые списки административных единиц
     if (els.region) {
       els.region.addEventListener("change", () => {
         const r = els.region.value;
-        fillSelect(els.district, uniq(ALL.filter(x => !r || x.region === r).map(x => x.district)), "Все районы");
-        fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r)).map(x => x.settlement)), "Все населённые пункты");
+        fillSelectSingle(els.district, uniq(ALL.filter(x => !r || x.region === r).map(x => x.district)), "Все районы");
+        fillSelectSingle(els.settlement, uniq(ALL.filter(x => (!r || x.region === r)).map(x => x.settlement)), "Все населённые пункты");
       });
     }
 
@@ -509,20 +534,7 @@
       els.district.addEventListener("change", () => {
         const r = els.region.value;
         const d = els.district.value;
-        fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r) && (!d || x.district === d)).map(x => x.settlement)), "Все населённые пункты");
-      });
-    }
-
-    if (els.q) {
-      els.q.addEventListener("change", () => {
-        const questions = getSelectedValues(els.q);
-        const answers = uniq(
-          ALL
-            .filter(x => !questions.length || questions.includes(x.question))
-            .flatMap(x => [x.unit1, x.unit2])
-            .filter(Boolean)
-        );
-        fillDatalist(els.dlFilterAnswers, answers);
+        fillSelectSingle(els.settlement, uniq(ALL.filter(x => (!r || x.region === r) && (!d || x.district === d)).map(x => x.settlement)), "Все населённые пункты");
       });
     }
 
@@ -530,11 +542,15 @@
 
     if (els.reset) {
       els.reset.onclick = () => {
-        Array.from(els.q.options).forEach(o => o.selected = false);
-        if (els.answersText) els.answersText.value = "";
+        Array.from(els.qSel.options).forEach(o => o.selected = false);
+        Array.from(els.aSel.options).forEach(o => o.selected = false);
+        if (els.qText) els.qText.value = "";
+        if (els.aText) els.aText.value = "";
+
         els.region.value = "";
         els.district.value = "";
         els.settlement.value = "";
+
         map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
         render();
       };
@@ -634,7 +650,6 @@
     img.src = pinDataUri("#2A81CB");
     els.legendPinBase.appendChild(img);
   }
-
   if (els.legendPinMixed) {
     const img = document.createElement("img");
     img.className = "legend-pin-img";
