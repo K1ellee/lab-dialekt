@@ -15,6 +15,7 @@
     settlement: $("settlement"),
 
     legendPinBase: $("legendPinBase"),
+    legendPinMixed: $("legendPinMixed"),
     legendDynamic: $("legendDynamic"),
 
     apply: $("apply"),
@@ -49,7 +50,6 @@
   map.createPane("boundaryPane");
   map.getPane("boundaryPane").style.zIndex = 450;
 
-  // Русская/локальная подложка OSM
   const osmAttr = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -68,13 +68,8 @@
   let ALL = [];
   let LAST_ADD_ROW = null;
 
-  function setStatus(s) {
-    if (els.status) els.status.textContent = s || "";
-  }
-
-  function setAddStatus(s) {
-    if (els.add_status) els.add_status.textContent = s || "";
-  }
+  function setStatus(s) { if (els.status) els.status.textContent = s || ""; }
+  function setAddStatus(s) { if (els.add_status) els.add_status.textContent = s || ""; }
 
   function esc(s) {
     return (s ?? "").toString()
@@ -94,20 +89,31 @@
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
   }
 
-  function fillSelect(sel, values, emptyLabel) {
+  function getSelectedValues(select) {
+    if (!select) return [];
+    return Array.from(select.selectedOptions || []).map(o => o.value).filter(Boolean);
+  }
+
+  function fillSelect(sel, values, emptyLabel, multiple = false, size = null) {
     if (!sel) return;
     sel.innerHTML = "";
 
-    const first = document.createElement("option");
-    first.value = "";
-    first.textContent = emptyLabel || "— все —";
-    sel.appendChild(first);
+    if (!multiple) {
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = emptyLabel || "— все —";
+      sel.appendChild(first);
+    }
 
     for (const v of values) {
       const o = document.createElement("option");
       o.value = v;
       o.textContent = v;
       sel.appendChild(o);
+    }
+
+    if (multiple && size) {
+      sel.size = size;
     }
   }
 
@@ -129,7 +135,6 @@
     const lon = parseFloat((r.lon ?? "").toString().replace(",", "."));
 
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-
     return { region, district, settlement, question, unit1, unit2, comment, lat, lon };
   }
 
@@ -228,11 +233,11 @@
     if (!els.legendDynamic) return;
     els.legendDynamic.innerHTML = "";
 
-    if (!keys || keys.length <= 1) return;
+    if (!keys || !keys.length) return;
 
     const title = document.createElement("div");
     title.className = "small";
-    title.innerHTML = "<b>Ответ (unit1):</b>";
+    title.innerHTML = "<b>Условные обозначения ответов:</b>";
     els.legendDynamic.appendChild(title);
 
     for (const k of keys) {
@@ -332,11 +337,10 @@
     return out;
   }
 
-  function buildAreas(rows, colorByKey) {
+  function buildAreas(rows, colorByKey, questionsSelected) {
     areasLayer.clearLayers();
 
-    const q = (els.q && els.q.value) ? els.q.value.trim() : "";
-    if (!q || !window.turf) return;
+    if (!questionsSelected.length || !window.turf) return;
 
     const by = new Map();
 
@@ -405,15 +409,13 @@
     if (!x1 && !x2) return true;
 
     const values = [v1, v2];
-
     if (x1 && values.includes(x1)) return true;
     if (x2 && values.includes(x2)) return true;
-
     return false;
   }
 
   function getFilteredRows() {
-    const q = els.q.value;
+    const questions = getSelectedValues(els.q);
     const a1 = els.unit1.value;
     const a2 = els.unit2.value;
     const r = els.region.value;
@@ -421,7 +423,7 @@
     const s = els.settlement.value;
 
     return ALL.filter(x =>
-      (!q || x.question === q) &&
+      (!questions.length || questions.includes(x.question)) &&
       rowMatchesAnswerFilters(x, a1, a2) &&
       (!r || x.region === r) &&
       (!d || x.district === d) &&
@@ -444,12 +446,12 @@
       return;
     }
 
-    const qSelected = !!(els.q.value && els.q.value.trim());
-    const keys = qSelected ? uniq(rows.map(answerKey)) : [];
+    const questionsSelected = getSelectedValues(els.q);
+    const keys = uniq(rows.map(answerKey));
     const colorByKey = buildColors(keys);
 
-    renderLegendDynamic(keys, colorByKey, qSelected);
-    if (qSelected) buildAreas(rows, colorByKey);
+    renderLegendDynamic(keys, colorByKey, questionsSelected.length > 0);
+    if (questionsSelected.length > 0) buildAreas(rows, colorByKey, questionsSelected);
     if (boundaryLayer) boundaryLayer.bringToFront();
 
     const groups = groupBySettlement(rows);
@@ -458,7 +460,7 @@
     for (const g of groups) {
       let icon;
 
-      if (qSelected) {
+      if (questionsSelected.length > 0) {
         const set = new Set(g.items.map(answerKey));
         const one = (set.size === 1) ? Array.from(set)[0] : "(смеш.)";
         const color = (set.size === 1) ? (colorByKey[one] || "#377eb8") : "#222222";
@@ -504,7 +506,7 @@
   }
 
   function initControlsFromData() {
-    fillSelect(els.q, uniq(ALL.map(x => x.question)), "Все вопросы");
+    fillSelect(els.q, uniq(ALL.map(x => x.question)), "", true, 8);
     fillSelect(els.region, uniq(ALL.map(x => x.region)), "Все регионы");
     fillSelect(els.district, [], "Все районы");
     fillSelect(els.settlement, [], "Все населённые пункты");
@@ -538,10 +540,10 @@
 
     if (els.q) {
       els.q.addEventListener("change", () => {
-        const q = els.q.value;
+        const questions = getSelectedValues(els.q);
         const answers = uniq(
           ALL
-            .filter(x => !q || x.question === q)
+            .filter(x => !questions.length || questions.includes(x.question))
             .flatMap(x => [x.unit1, x.unit2])
             .filter(Boolean)
         );
@@ -554,7 +556,7 @@
 
     if (els.reset) {
       els.reset.onclick = () => {
-        els.q.value = "";
+        Array.from(els.q.options).forEach(o => o.selected = false);
         els.unit1.value = "";
         els.unit2.value = "";
         els.region.value = "";
@@ -660,6 +662,14 @@
     els.legendPinBase.appendChild(img);
   }
 
+  if (els.legendPinMixed) {
+    const img = document.createElement("img");
+    img.className = "legend-pin-img";
+    img.alt = "";
+    img.src = pinDataUri("#222222");
+    els.legendPinMixed.appendChild(img);
+  }
+
   if (els.add_prepare) {
     els.add_prepare.onclick = () => prepareAdd().catch(e => {
       setAddStatus("Ошибка");
@@ -680,4 +690,3 @@
     console.error(e);
   });
 })();
-
