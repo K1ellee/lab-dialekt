@@ -49,11 +49,15 @@
   map.createPane("boundaryPane");
   map.getPane("boundaryPane").style.zIndex = 450;
 
-  const osmAttr = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  // Светлая аккуратная карта без рельефа
+  const cartoAttr =
+    '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' +
+    ' &copy; <a target="_blank" rel="noopener" href="https://carto.com/attributions">CARTO</a>';
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: osmAttr
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 20,
+    attribution: cartoAttr,
+    subdomains: "abcd"
   }).addTo(map);
 
   if (map.attributionControl && map.attributionControl.setPrefix) {
@@ -394,6 +398,7 @@
     }
   }
 
+  // НОВАЯ логика: если заполнены оба поля, работает ИЛИ, а не И
   function rowMatchesAnswerFilters(row, a1, a2) {
     const v1 = (row.unit1 || "").trim();
     const v2 = (row.unit2 || "").trim();
@@ -403,16 +408,13 @@
 
     if (!x1 && !x2) return true;
 
-    if (x1 && !x2) {
-      return v1 === x1 || v2 === x1;
-    }
+    const values = [v1, v2];
 
-    if (!x1 && x2) {
-      return v1 === x2 || v2 === x2;
-    }
+    // хотя бы одно из введённых значений должно встретиться
+    if (x1 && values.includes(x1)) return true;
+    if (x2 && values.includes(x2)) return true;
 
-    const vals = [v1, v2];
-    return vals.includes(x1) && vals.includes(x2);
+    return false;
   }
 
   function getFilteredRows() {
