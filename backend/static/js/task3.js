@@ -64,8 +64,8 @@
   let ALL = [];
   let LAST_ADD_ROW = null;
 
-  function setStatus(s) { els.status.textContent = s || ""; }
-  function setAddStatus(s) { els.add_status.textContent = s || ""; }
+  function setStatus(s) { if (els.status) els.status.textContent = s || ""; }
+  function setAddStatus(s) { if (els.add_status) els.add_status.textContent = s || ""; }
 
   function esc(s) {
     return (s ?? "").toString()
@@ -84,6 +84,7 @@
   }
 
   function fillSelect(sel, values, emptyLabel) {
+    if (!sel) return;
     sel.innerHTML = "";
     const opt0 = document.createElement("option");
     opt0.value = "";
@@ -99,6 +100,7 @@
   }
 
   function fillDatalist(dl, values) {
+    if (!dl) return;
     dl.innerHTML = values.map(v => `<option value="${esc(v)}"></option>`).join("");
   }
 
@@ -122,16 +124,14 @@
     const url = CFG.UDM_BOUNDARY_URL || "/static/data/udmurtia.geojson";
     try {
       const r = await fetch(url, { cache: "no-store" });
-      if (!r.ok) { console.warn("Boundary HTTP", r.status); return; }
+      if (!r.ok) return;
       const gj = await r.json();
-
       if (boundaryLayer) boundaryLayer.remove();
       boundaryLayer = L.geoJSON(gj, {
         pane: "boundaryPane",
         interactive: false,
         style: { color: "#c00", weight: 3, fill: false, opacity: 0.95 }
       }).addTo(map);
-
       boundaryLayer.bringToFront();
     } catch (e) {
       console.warn("Boundary load failed:", e);
@@ -386,12 +386,12 @@
 
     markersLayer.clearLayers();
     areasLayer.clearLayers();
-    els.list.innerHTML = "";
+    if (els.list) els.list.innerHTML = "";
     if (els.legendDynamic) els.legendDynamic.innerHTML = "";
 
     if (!rows.length) {
       setStatus(`Показано: 0 из ${ALL.length}`);
-      els.list.innerHTML = '<div class="small">Нет результатов.</div>';
+      if (els.list) els.list.innerHTML = '<div class="small">Нет результатов.</div>';
       if (boundaryLayer) boundaryLayer.bringToFront();
       return;
     }
@@ -402,7 +402,6 @@
 
     renderLegendDynamic(keys, colorByKey, qSelected);
     if (qSelected) buildAreas(rows, colorByKey);
-
     if (boundaryLayer) boundaryLayer.bringToFront();
 
     const groups = groupBySettlement(rows);
@@ -420,26 +419,26 @@
       }
 
       const m = L.marker([g.lat, g.lon], { icon }).addTo(markersLayer);
-
       if (g.items.length === 1) m.bindPopup(popupHtmlSingle(g.items[0]));
       else m.bindPopup(popupHtmlForGroup(g));
 
-      const row = document.createElement("div");
-      row.className = "row";
-      row.innerHTML =
-        (g.items.length === 1)
-          ? `<div><b>${esc(g.settlement)}</b> — ${esc(g.items[0].question)}</div>`
-          : `<div><b>${esc(g.settlement)}</b> — ${g.items.length} запис(ей)</div>`;
-
-      row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
-      els.list.appendChild(row);
+      if (els.list) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML =
+          (g.items.length === 1)
+            ? `<div><b>${esc(g.settlement)}</b> — ${esc(g.items[0].question)}</div>`
+            : `<div><b>${esc(g.settlement)}</b> — ${g.items.length} запис(ей)</div>`;
+        row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
+        els.list.appendChild(row);
+      }
     }
   }
 
   async function loadData() {
     setStatus("Загружаю данные...");
 
-    if (CFG.SHEET_EDIT_URL) {
+    if (CFG.SHEET_EDIT_URL && els.sheetLinks) {
       const edit = esc(CFG.SHEET_EDIT_URL);
       els.sheetLinks.innerHTML = `Таблица: <a target="_blank" href="${edit}">открыть для редактирования</a>`;
     }
@@ -469,44 +468,56 @@
     fillDatalist(els.dlUnit1, uniq(ALL.map(x => x.unit1)));
     fillDatalist(els.dlUnit2, uniq(ALL.map(x => x.unit2)));
 
-    els.region.addEventListener("change", () => {
-      const r = els.region.value;
-      fillSelect(els.district, uniq(ALL.filter(x => !r || x.region === r).map(x => x.district)), "Все районы");
-      fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r)).map(x => x.settlement)), "Все населённые пункты");
-    });
+    if (els.region) {
+      els.region.addEventListener("change", () => {
+        const r = els.region.value;
+        fillSelect(els.district, uniq(ALL.filter(x => !r || x.region === r).map(x => x.district)), "Все районы");
+        fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r)).map(x => x.settlement)), "Все населённые пункты");
+      });
+    }
 
-    els.district.addEventListener("change", () => {
-      const r = els.region.value;
-      const d = els.district.value;
-      fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r) && (!d || x.district === d)).map(x => x.settlement)), "Все населённые пункты");
-    });
+    if (els.district) {
+      els.district.addEventListener("change", () => {
+        const r = els.region.value;
+        const d = els.district.value;
+        fillSelect(els.settlement, uniq(ALL.filter(x => (!r || x.region === r) && (!d || x.district === d)).map(x => x.settlement)), "Все населённые пункты");
+      });
+    }
 
-    els.q.addEventListener("change", () => {
-      const q = els.q.value;
-      fillSelect(els.unit1, uniq(ALL.filter(x => !q || x.question === q).map(x => x.unit1)), "Все unit1");
-      fillSelect(els.unit2, uniq(ALL.filter(x => !q || x.question === q).map(x => x.unit2)), "Все unit2");
-    });
+    if (els.q) {
+      els.q.addEventListener("change", () => {
+        const q = els.q.value;
+        fillSelect(els.unit1, uniq(ALL.filter(x => !q || x.question === q).map(x => x.unit1)), "Все unit1");
+        fillSelect(els.unit2, uniq(ALL.filter(x => !q || x.question === q).map(x => x.unit2)), "Все unit2");
+      });
+    }
 
-    els.apply.onclick = () => render();
-    els.reset.onclick = () => {
-      els.q.value = ""; els.unit1.value = ""; els.unit2.value = "";
-      els.region.value = ""; els.district.value = ""; els.settlement.value = "";
-      map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
-      render();
-    };
+    if (els.apply) els.apply.onclick = () => render();
+
+    if (els.reset) {
+      els.reset.onclick = () => {
+        els.q.value = ""; els.unit1.value = ""; els.unit2.value = "";
+        els.region.value = ""; els.district.value = ""; els.settlement.value = "";
+        map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+        render();
+      };
+    }
   }
+
+  // ===== Добавление населённых пунктов (восстановлено) =====
 
   async function prepareAdd() {
     setAddStatus("Ищу координаты...");
-    els.add_result.innerHTML = "";
-    els.add_send.disabled = true;
+    if (els.add_result) els.add_result.innerHTML = "";
+    if (els.add_send) els.add_send.disabled = true;
+    LAST_ADD_ROW = null;
 
-    const reg = els.add_region.value.trim();
-    let dist = els.add_district.value.trim();
-    const setl = els.add_settlement.value.trim();
-    const ques = els.add_question.value.trim();
-    const u1 = els.add_unit1.value.trim();
-    const u2 = els.add_unit2.value.trim();
+    const reg = (els.add_region?.value || "").trim();
+    let dist = (els.add_district?.value || "").trim(); // можно пустым
+    const setl = (els.add_settlement?.value || "").trim();
+    const ques = (els.add_question?.value || "").trim();
+    const u1 = (els.add_unit1?.value || "").trim();
+    const u2 = (els.add_unit2?.value || "").trim();    // необязательно
 
     if (!reg || !setl || !ques || !u1) {
       setAddStatus("Заполни: регион, населённый пункт, вопрос, unit1");
@@ -514,57 +525,75 @@
     }
 
     const query = [setl, dist, reg, "Россия"].filter(Boolean).join(", ");
+
     const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
     const j = await r.json();
 
     if (!j.ok) {
       const wiki = j.wiki || `https://ru.wikipedia.org/wiki/${encodeURIComponent(setl.replace(/ /g, "_"))}`;
-      els.add_result.innerHTML = `Не нашел координаты. <a target="_blank" href="${wiki}">Открыть Википедию</a>`;
+      if (els.add_result) els.add_result.innerHTML = `Не нашёл координаты. <a target="_blank" href="${wiki}">Открыть Википедию</a>`;
       setAddStatus("Координаты не найдены");
       return;
     }
 
+    // автоподстановка района
     if (!dist && j.district) {
       dist = String(j.district).trim();
-      els.add_district.value = dist;
+      if (els.add_district) els.add_district.value = dist;
     }
 
     LAST_ADD_ROW = {
-      region: reg, district: dist, settlement: setl,
-      lat: j.lat, lon: j.lon,
-      question: ques, unit1: u1, unit2: u2,
+      region: reg,
+      district: dist,
+      settlement: setl,
+      lat: j.lat,
+      lon: j.lon,
+      question: ques,
+      unit1: u1,
+      unit2: u2,
       comment: ""
     };
 
-    els.add_result.innerHTML =
-      `Найдено: <b>${esc(j.display_name)}</b>` +
-      (dist ? `<br>Район: <b>${esc(dist)}</b>` : "") +
-      `<br>Координаты: ${j.lat}, ${j.lon}`;
+    if (els.add_result) {
+      els.add_result.innerHTML =
+        `Найдено: <b>${esc(j.display_name || "")}</b>` +
+        (dist ? `<br>Район: <b>${esc(dist)}</b>` : "") +
+        `<br>Координаты: ${j.lat}, ${j.lon}`;
+    }
 
-    els.add_send.disabled = false;
+    if (els.add_send) els.add_send.disabled = false;
     setAddStatus("Готово");
   }
 
   async function sendAdd() {
     if (!LAST_ADD_ROW) return;
+
     setAddStatus("Отправка...");
+    if (els.add_send) els.add_send.disabled = true;
 
     const r = await fetch("/api/sheet_append", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(LAST_ADD_ROW)
     });
-    const j = await r.json();
+
+    const j = await r.json().catch(() => ({}));
 
     if (j.ok) {
       setAddStatus("Успешно!");
-      els.add_result.innerHTML = "Запись добавлена в таблицу.";
+      if (els.add_result) els.add_result.innerHTML = "Запись добавлена в таблицу.";
       LAST_ADD_ROW = null;
-      els.add_send.disabled = true;
-    } else {
-      setAddStatus("Ошибка");
+
+      // попробуем обновить данные (в таблице/CSV может быть задержка)
+      setTimeout(() => loadData().catch(() => {}), 1500);
+      return;
+    }
+
+    setAddStatus("Ошибка");
+    if (els.add_result) {
       els.add_result.textContent = (j.error || "Ошибка") + (j.details ? (": " + j.details) : "");
     }
+    if (els.add_send) els.add_send.disabled = false;
   }
 
   // базовый значок в легенде (синий)
@@ -576,8 +605,8 @@
     els.legendPinBase.appendChild(img);
   }
 
-  els.add_prepare.onclick = () => prepareAdd().catch(e => { setAddStatus("Ошибка"); els.add_result.textContent = String(e); });
-  els.add_send.onclick = () => sendAdd().catch(e => { setAddStatus("Ошибка"); els.add_result.textContent = String(e); });
+  if (els.add_prepare) els.add_prepare.onclick = () => prepareAdd().catch(e => { setAddStatus("Ошибка"); if (els.add_result) els.add_result.textContent = String(e); });
+  if (els.add_send)    els.add_send.onclick = () => sendAdd().catch(e => { setAddStatus("Ошибка"); if (els.add_result) els.add_result.textContent = String(e); });
 
   loadBoundary();
   loadData().catch(e => { setStatus("Ошибка загрузки"); console.error(e); });
