@@ -43,14 +43,9 @@
 
   const map = L.map("map", { scrollWheelZoom: true }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
 
-  // Панели слоёв (важно для порядка отрисовки)
-  map.createPane("areasPane");
-  map.getPane("areasPane").style.zIndex = 350;
-
-  map.createPane("boundaryPane");
-  map.getPane("boundaryPane").style.zIndex = 450;
-
-  // Маркеры Leaflet и так рисуются выше (markerPane ~ 600)
+  // Порядок слоёв
+  map.createPane("areasPane");    map.getPane("areasPane").style.zIndex = 350;
+  map.createPane("boundaryPane"); map.getPane("boundaryPane").style.zIndex = 450;
 
   const osmAttribution = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -124,38 +119,26 @@
   }
 
   async function loadBoundary() {
-    const url = CFG.UDM_BOUNDARY_URL || "/api/boundary/udmurtia";
+    const url = CFG.UDM_BOUNDARY_URL || "/static/data/udmurtia.geojson";
     try {
       const r = await fetch(url, { cache: "no-store" });
-      if (!r.ok) {
-        console.warn("Boundary HTTP not ok:", r.status);
-        return;
-      }
+      if (!r.ok) { console.warn("Boundary HTTP", r.status); return; }
       const gj = await r.json();
 
-      // если вдруг сервер вернул {ok:false,...} — не пытаемся рисовать
-      if (gj && gj.ok === false) {
-        console.warn("Boundary API returned error:", gj);
-        return;
-      }
-
       if (boundaryLayer) boundaryLayer.remove();
-
       boundaryLayer = L.geoJSON(gj, {
         pane: "boundaryPane",
         interactive: false,
         style: { color: "#c00", weight: 3, fill: false, opacity: 0.95 }
       }).addTo(map);
 
-      // на всякий случай поднимем границу над ареалами
       boundaryLayer.bringToFront();
-
     } catch (e) {
       console.warn("Boundary load failed:", e);
     }
   }
 
-  // ===== Colored pin icons (SVG) =====
+  // ===== SVG pin icons =====
   function pinSvg(color) {
     return `
 <svg xmlns="http://www.w3.org/2000/svg" width="25" height="41" viewBox="0 0 25 41">
@@ -271,7 +254,6 @@
     html += `<div><b>${esc(g.settlement || "(без названия)")}</b></div>`;
     html += `<div class="small">${esc(g.region)}${g.district ? (", " + esc(g.district)) : ""}</div>`;
     html += `<hr style="margin:6px 0">`;
-
     for (let i = 0; i < g.items.length; i++) {
       const x = g.items[i];
       html += `<div style="margin-bottom:8px;">`;
@@ -320,9 +302,7 @@
     }
 
     const out = Array.from(m.values());
-    for (const g of out) {
-      g.items.sort((a,b) => (a.question || "").localeCompare((b.question || ""), "ru"));
-    }
+    for (const g of out) g.items.sort((a,b) => (a.question || "").localeCompare((b.question || ""), "ru"));
     out.sort((a,b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
     return out;
   }
@@ -331,8 +311,7 @@
     areasLayer.clearLayers();
 
     const q = (els.q && els.q.value) ? els.q.value.trim() : "";
-    if (!q) return;
-    if (!window.turf) return;
+    if (!q || !window.turf) return;
 
     const by = new Map();
     for (const r of rows) {
@@ -361,7 +340,7 @@
           radius: 7000,
           color, weight: 2,
           fillColor: color, fillOpacity: 0.12
-        }).bindPopup(`<b>Ареал</b><br>${esc(k)}<br>Точек: 1`).addTo(areasLayer);
+        }).addTo(areasLayer);
         continue;
       }
 
@@ -372,7 +351,7 @@
         L.geoJSON(poly, {
           pane: "areasPane",
           style: { color, weight: 2, fillColor: color, fillOpacity: 0.12 }
-        }).bindPopup(`<b>Ареал</b><br>${esc(k)}<br>Точек: 2`).addTo(areasLayer);
+        }).addTo(areasLayer);
         continue;
       }
 
@@ -384,7 +363,7 @@
       L.geoJSON(buffered, {
         pane: "areasPane",
         style: { color, weight: 2, fillColor: color, fillOpacity: 0.12 }
-      }).bindPopup(`<b>Ареал</b><br>${esc(k)}<br>Точек: ${pts.length}`).addTo(areasLayer);
+      }).addTo(areasLayer);
     }
   }
 
@@ -422,18 +401,15 @@
     const colorByKey = buildColors(keys);
 
     renderLegendDynamic(keys, colorByKey, qSelected);
-
     if (qSelected) buildAreas(rows, colorByKey);
 
-    // границу поднимем поверх ареалов
     if (boundaryLayer) boundaryLayer.bringToFront();
 
     const groups = groupBySettlement(rows);
     setStatus(`Пунктов: ${groups.length} · Записей: ${rows.length} (всего: ${ALL.length})`);
 
     for (const g of groups) {
-      let icon = null;
-
+      let icon;
       if (qSelected) {
         const set = new Set(g.items.map(answerKey));
         const one = (set.size === 1) ? Array.from(set)[0] : "(смеш.)";
@@ -450,17 +426,10 @@
 
       const row = document.createElement("div");
       row.className = "row";
-
-      if (g.items.length === 1) {
-        const x = g.items[0];
-        row.innerHTML =
-          `<div><b>${esc(x.settlement)}</b> — ${esc(x.question)}</div>` +
-          `<div class="small">${esc(x.region)}${x.district ? (" · " + esc(x.district)) : ""} · ${esc(x.unit1)} / ${esc(x.unit2)}</div>`;
-      } else {
-        row.innerHTML =
-          `<div><b>${esc(g.settlement)}</b> — ${g.items.length} запис(ей)</div>` +
-          `<div class="small">${esc(g.region)}${g.district ? (" · " + esc(g.district)) : ""}</div>`;
-      }
+      row.innerHTML =
+        (g.items.length === 1)
+          ? `<div><b>${esc(g.settlement)}</b> — ${esc(g.items[0].question)}</div>`
+          : `<div><b>${esc(g.settlement)}</b> — ${g.items.length} запис(ей)</div>`;
 
       row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
       els.list.appendChild(row);
@@ -475,26 +444,14 @@
       els.sheetLinks.innerHTML = `Таблица: <a target="_blank" href="${edit}">открыть для редактирования</a>`;
     }
 
-    try {
-      if (CFG.SHEET_CSV_URL) {
-        const resp = await fetch(CFG.SHEET_CSV_URL, { cache: "no-store" });
-        const csvText = await resp.text();
-        const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-        ALL = (parsed.data || []).map(normalizeRow).filter(Boolean);
-      } else {
-        const r = await fetch("/static/data/sample_points.json");
-        const j = await r.json();
-        ALL = (Array.isArray(j) ? j : (j.points || [])).map(normalizeRow).filter(Boolean);
-      }
+    const resp = await fetch(CFG.SHEET_CSV_URL, { cache: "no-store" });
+    const csvText = await resp.text();
+    const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+    ALL = (parsed.data || []).map(normalizeRow).filter(Boolean);
 
-      setStatus(`Загружено записей: ${ALL.length}`);
-      initControlsFromData();
-      render();
-    } catch (e) {
-      setStatus("Ошибка загрузки");
-      console.error(e);
-      alert("Не удалось загрузить данные.\n\n" + e);
-    }
+    setStatus(`Загружено записей: ${ALL.length}`);
+    initControlsFromData();
+    render();
   }
 
   function initControlsFromData() {
@@ -531,13 +488,83 @@
     });
 
     els.apply.onclick = () => render();
-
     els.reset.onclick = () => {
       els.q.value = ""; els.unit1.value = ""; els.unit2.value = "";
       els.region.value = ""; els.district.value = ""; els.settlement.value = "";
       map.setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
       render();
     };
+  }
+
+  async function prepareAdd() {
+    setAddStatus("Ищу координаты...");
+    els.add_result.innerHTML = "";
+    els.add_send.disabled = true;
+
+    const reg = els.add_region.value.trim();
+    let dist = els.add_district.value.trim();
+    const setl = els.add_settlement.value.trim();
+    const ques = els.add_question.value.trim();
+    const u1 = els.add_unit1.value.trim();
+    const u2 = els.add_unit2.value.trim();
+
+    if (!reg || !setl || !ques || !u1) {
+      setAddStatus("Заполни: регион, населённый пункт, вопрос, unit1");
+      return;
+    }
+
+    const query = [setl, dist, reg, "Россия"].filter(Boolean).join(", ");
+    const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+    const j = await r.json();
+
+    if (!j.ok) {
+      const wiki = j.wiki || `https://ru.wikipedia.org/wiki/${encodeURIComponent(setl.replace(/ /g, "_"))}`;
+      els.add_result.innerHTML = `Не нашел координаты. <a target="_blank" href="${wiki}">Открыть Википедию</a>`;
+      setAddStatus("Координаты не найдены");
+      return;
+    }
+
+    if (!dist && j.district) {
+      dist = String(j.district).trim();
+      els.add_district.value = dist;
+    }
+
+    LAST_ADD_ROW = {
+      region: reg, district: dist, settlement: setl,
+      lat: j.lat, lon: j.lon,
+      question: ques, unit1: u1, unit2: u2,
+      comment: ""
+    };
+
+    els.add_result.innerHTML =
+      `Найдено: <b>${esc(j.display_name)}</b>` +
+      (dist ? `<br>Район: <b>${esc(dist)}</b>` : "") +
+      `<br>Координаты: ${j.lat}, ${j.lon}`;
+
+    els.add_send.disabled = false;
+    setAddStatus("Готово");
+  }
+
+  async function sendAdd() {
+    if (!LAST_ADD_ROW) return;
+    setAddStatus("Отправка...");
+
+    const r = await fetch("/api/sheet_append", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(LAST_ADD_ROW)
+    });
+    const j = await r.json();
+
+    if (j.ok) {
+      setAddStatus("Успешно!");
+      els.add_result.innerHTML = "Запись добавлена в таблицу.";
+      LAST_ADD_ROW = null;
+      els.add_send.disabled = true;
+    } else {
+      setAddStatus("Ошибка");
+      els.add_result.textContent = (j.error || "Ошибка") + (j.details ? (": " + j.details) : "");
+    }
   }
 
   // базовый значок в легенде (синий)
@@ -549,13 +576,9 @@
     els.legendPinBase.appendChild(img);
   }
 
-  els.add_prepare.onclick = async () => {};
-  els.add_send.onclick = async () => {};
-
-  // IMPORTANT: кнопки добавления остаются как были ранее в твоей версии;
-  // здесь не трогаем, потому что проблема только в границе.
-  // (если нужно — скажи, и я верну полный блок add/prepare/send без заглушек)
+  els.add_prepare.onclick = () => prepareAdd().catch(e => { setAddStatus("Ошибка"); els.add_result.textContent = String(e); });
+  els.add_send.onclick = () => sendAdd().catch(e => { setAddStatus("Ошибка"); els.add_result.textContent = String(e); });
 
   loadBoundary();
-  loadData();
+  loadData().catch(e => { setStatus("Ошибка загрузки"); console.error(e); });
 })();
