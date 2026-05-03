@@ -21,18 +21,14 @@
   <div class="card">
     <div class="small">Фильтры:</div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:10px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
       <div>
         <div class="small">Вопросы (можно выбрать несколько: Ctrl + клик)</div>
         <select id="q" multiple size="8"></select>
       </div>
       <div>
-        <div class="small">Ответ 1</div>
-        <select id="unit1"></select>
-      </div>
-      <div>
-        <div class="small">Ответ 2</div>
-        <select id="unit2"></select>
+        <div class="small">Ответы (можно выбрать несколько: Ctrl + клик)</div>
+        <select id="answers" multiple size="8"></select>
       </div>
     </div>
 
@@ -76,7 +72,7 @@
 
       <div class="legend-item">
         <span class="legend-icon" id="legendPinMixed"></span>
-        <span class="small"><b>Смешанный пункт</b> (в выбранной выборке представлены разные ответы)</span>
+        <span class="small"><b>Смешанный пункт</b> (в выборке представлены разные ответы)</span>
       </div>
 
       <div id="legendDynamic" class="legend-dynamic"></div>

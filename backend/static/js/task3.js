@@ -8,8 +8,7 @@
     list: $("list"),
 
     q: $("q"),
-    unit1: $("unit1"),
-    unit2: $("unit2"),
+    answers: $("answers"),
     region: $("region"),
     district: $("district"),
     settlement: $("settlement"),
@@ -232,7 +231,6 @@
   function renderLegendDynamic(keys, colorByKey, showAreas) {
     if (!els.legendDynamic) return;
     els.legendDynamic.innerHTML = "";
-
     if (!keys || !keys.length) return;
 
     const title = document.createElement("div");
@@ -281,10 +279,10 @@
 
     for (let i = 0; i < g.items.length; i++) {
       const x = g.items[i];
+      const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
       html += `<div style="margin-bottom:8px;">`;
       html += `<div><b>${i + 1}. ${esc(x.question)}</b></div>`;
-      html += `<div>Ответ 1: ${esc(x.unit1)}</div>`;
-      html += `<div>Ответ 2: ${esc(x.unit2)}</div>`;
+      html += `<div>${esc(answerText)}</div>`;
       html += `</div>`;
     }
 
@@ -293,14 +291,14 @@
   }
 
   function popupHtmlSingle(x) {
+    const answerText = [x.unit1, x.unit2].filter(Boolean).join(" / ");
     return (
       `<div style="min-width:240px">` +
       `<div><b>${esc(x.settlement || "")}</b></div>` +
       `<div class="small">${esc(x.region)}${x.district ? (", " + esc(x.district)) : ""}</div>` +
       `<hr style="margin:6px 0">` +
       `<div><b>${esc(x.question)}</b></div>` +
-      `<div>Ответ 1: ${esc(x.unit1)}</div>` +
-      `<div>Ответ 2: ${esc(x.unit2)}</div>` +
+      `<div>${esc(answerText)}</div>` +
       `</div>`
     );
   }
@@ -339,7 +337,6 @@
 
   function buildAreas(rows, colorByKey, questionsSelected) {
     areasLayer.clearLayers();
-
     if (!questionsSelected.length || !window.turf) return;
 
     const by = new Map();
@@ -399,32 +396,23 @@
     }
   }
 
-  function rowMatchesAnswerFilters(row, a1, a2) {
-    const v1 = (row.unit1 || "").trim();
-    const v2 = (row.unit2 || "").trim();
+  function rowMatchesAnswers(row, selectedAnswers) {
+    if (!selectedAnswers.length) return true;
 
-    const x1 = (a1 || "").trim();
-    const x2 = (a2 || "").trim();
-
-    if (!x1 && !x2) return true;
-
-    const values = [v1, v2];
-    if (x1 && values.includes(x1)) return true;
-    if (x2 && values.includes(x2)) return true;
-    return false;
+    const vals = [(row.unit1 || "").trim(), (row.unit2 || "").trim()];
+    return selectedAnswers.some(a => vals.includes(a));
   }
 
   function getFilteredRows() {
     const questions = getSelectedValues(els.q);
-    const a1 = els.unit1.value;
-    const a2 = els.unit2.value;
+    const answers = getSelectedValues(els.answers);
     const r = els.region.value;
     const d = els.district.value;
     const s = els.settlement.value;
 
     return ALL.filter(x =>
       (!questions.length || questions.includes(x.question)) &&
-      rowMatchesAnswerFilters(x, a1, a2) &&
+      rowMatchesAnswers(x, answers) &&
       (!r || x.region === r) &&
       (!d || x.district === d) &&
       (!s || x.settlement === s)
@@ -475,14 +463,16 @@
       else m.bindPopup(popupHtmlForGroup(g));
 
       if (els.list) {
-        const row = document.createElement("div");
-        row.className = "row";
-        row.innerHTML =
-          (g.items.length === 1)
-            ? `<div><b>${esc(g.settlement)}</b> — ${esc(g.items[0].question)}</div>`
-            : `<div><b>${esc(g.settlement)}</b> — ${g.items.length} запис(ей)</div>`;
-        row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
-        els.list.appendChild(row);
+        for (const item of g.items) {
+          const answerText = [item.unit1, item.unit2].filter(Boolean).join(" / ");
+          const row = document.createElement("div");
+          row.className = "row";
+          row.innerHTML =
+            `<div><b>${esc(item.settlement)}</b> — ${esc(item.question)} — ${esc(answerText)}</div>` +
+            `<div class="small">${esc(item.region)}${item.district ? (" · " + esc(item.district)) : ""}</div>`;
+          row.onclick = () => { map.panTo([g.lat, g.lon]); m.openPopup(); };
+          els.list.appendChild(row);
+        }
       }
     }
   }
@@ -512,8 +502,7 @@
     fillSelect(els.settlement, [], "Все населённые пункты");
 
     const allAnswers = uniq(ALL.flatMap(x => [x.unit1, x.unit2]).filter(Boolean));
-    fillSelect(els.unit1, allAnswers, "Все ответы");
-    fillSelect(els.unit2, allAnswers, "Все ответы");
+    fillSelect(els.answers, allAnswers, "", true, 8);
 
     fillDatalist(els.dlRegions, uniq(ALL.map(x => x.region)));
     fillDatalist(els.dlDistricts, uniq(ALL.map(x => x.district)));
@@ -547,8 +536,7 @@
             .flatMap(x => [x.unit1, x.unit2])
             .filter(Boolean)
         );
-        fillSelect(els.unit1, answers, "Все ответы");
-        fillSelect(els.unit2, answers, "Все ответы");
+        fillSelect(els.answers, answers, "", true, 8);
       });
     }
 
@@ -557,8 +545,7 @@
     if (els.reset) {
       els.reset.onclick = () => {
         Array.from(els.q.options).forEach(o => o.selected = false);
-        els.unit1.value = "";
-        els.unit2.value = "";
+        Array.from(els.answers.options).forEach(o => o.selected = false);
         els.region.value = "";
         els.district.value = "";
         els.settlement.value = "";
