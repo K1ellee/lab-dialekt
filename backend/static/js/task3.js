@@ -43,14 +43,13 @@
 
   const map = L.map("map", { scrollWheelZoom: true }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
 
-  // Порядок слоёв
-  map.createPane("areasPane");    map.getPane("areasPane").style.zIndex = 350;
-  map.createPane("boundaryPane"); map.getPane("boundaryPane").style.zIndex = 450;
+  map.createPane("areasPane");
+  map.getPane("areasPane").style.zIndex = 350;
 
-  // Светлая карта БЕЗ рельефа, с водой
-  const cartoAttr =
-    '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' +
-    ' &copy; <a target="_blank" rel="noopener" href="https://carto.com/attributions">CARTO</a>';
+  map.createPane("boundaryPane");
+  map.getPane("boundaryPane").style.zIndex = 450;
+
+  const osmAttr = '&copy; <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -68,13 +67,20 @@
   let ALL = [];
   let LAST_ADD_ROW = null;
 
-  function setStatus(s) { if (els.status) els.status.textContent = s || ""; }
-  function setAddStatus(s) { if (els.add_status) els.add_status.textContent = s || ""; }
+  function setStatus(s) {
+    if (els.status) els.status.textContent = s || "";
+  }
+
+  function setAddStatus(s) {
+    if (els.add_status) els.add_status.textContent = s || "";
+  }
 
   function esc(s) {
     return (s ?? "").toString()
-      .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
   }
 
@@ -84,16 +90,17 @@
       const t = (v ?? "").toString().trim();
       if (t) set.add(t);
     }
-    return Array.from(set).sort((a,b)=>a.localeCompare(b, "ru"));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
   }
 
   function fillSelect(sel, values, emptyLabel) {
     if (!sel) return;
     sel.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = emptyLabel || "— все —";
-    sel.appendChild(opt0);
+
+    const first = document.createElement("option");
+    first.value = "";
+    first.textContent = emptyLabel || "— все —";
+    sel.appendChild(first);
 
     for (const v of values) {
       const o = document.createElement("option");
@@ -121,6 +128,7 @@
     const lon = parseFloat((r.lon ?? "").toString().replace(",", "."));
 
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
     return { region, district, settlement, question, unit1, unit2, comment, lat, lon };
   }
 
@@ -130,12 +138,15 @@
       const r = await fetch(url, { cache: "no-store" });
       if (!r.ok) return;
       const gj = await r.json();
+
       if (boundaryLayer) boundaryLayer.remove();
+
       boundaryLayer = L.geoJSON(gj, {
         pane: "boundaryPane",
         interactive: false,
         style: { color: "#c00", weight: 3, fill: false, opacity: 0.95 }
       }).addTo(map);
+
       boundaryLayer.bringToFront();
     } catch (e) {
       console.warn("Boundary load failed:", e);
@@ -176,26 +187,29 @@
   }
 
   function hslToHex(h, s, l) {
-    s /= 100; l /= 100;
-    const c = (1 - Math.abs(2*l - 1)) * s;
-    const x = c * (1 - Math.abs((h/60) % 2 - 1));
-    const m = l - c/2;
-    let r=0,g=0,b=0;
-    if (0<=h && h<60) { r=c; g=x; b=0; }
-    else if (60<=h && h<120) { r=x; g=c; b=0; }
-    else if (120<=h && h<180) { r=0; g=c; b=x; }
-    else if (180<=h && h<240) { r=0; g=x; b=c; }
-    else if (240<=h && h<300) { r=x; g=0; b=c; }
-    else { r=c; g=0; b=x; }
-    const toHex = (v) => Math.round((v+m)*255).toString(16).padStart(2,"0");
+    s /= 100;
+    l /= 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+
+    if (0 <= h && h < 60) { r = c; g = x; b = 0; }
+    else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
+    else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
+    else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
+    else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
+    else { r = c; g = 0; b = x; }
+
+    const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
     return "#" + toHex(r) + toHex(g) + toHex(b);
   }
 
   function hexToRgba(hex, a) {
     const h = hex.replace("#", "");
-    const r = parseInt(h.slice(0,2), 16);
-    const g = parseInt(h.slice(2,4), 16);
-    const b = parseInt(h.slice(4,6), 16);
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
     return `rgba(${r},${g},${b},${a})`;
   }
 
@@ -212,6 +226,7 @@
   function renderLegendDynamic(keys, colorByKey, showAreas) {
     if (!els.legendDynamic) return;
     els.legendDynamic.innerHTML = "";
+
     if (!keys || keys.length <= 1) return;
 
     const title = document.createElement("div");
@@ -257,14 +272,16 @@
     html += `<div><b>${esc(g.settlement || "(без названия)")}</b></div>`;
     html += `<div class="small">${esc(g.region)}${g.district ? (", " + esc(g.district)) : ""}</div>`;
     html += `<hr style="margin:6px 0">`;
+
     for (let i = 0; i < g.items.length; i++) {
       const x = g.items[i];
       html += `<div style="margin-bottom:8px;">`;
-      html += `<div><b>${i+1}. ${esc(x.question)}</b></div>`;
+      html += `<div><b>${i + 1}. ${esc(x.question)}</b></div>`;
       html += `<div>Ответ 1: ${esc(x.unit1)}</div>`;
       html += `<div>Ответ 2: ${esc(x.unit2)}</div>`;
       html += `</div>`;
     }
+
     html += `</div>`;
     return html;
   }
@@ -284,6 +301,7 @@
 
   function groupBySettlement(rows) {
     const m = new Map();
+
     for (const x of rows) {
       const key = [
         (x.region || "").toLowerCase().trim(),
@@ -301,12 +319,15 @@
           items: []
         });
       }
+
       m.get(key).items.push(x);
     }
 
     const out = Array.from(m.values());
-    for (const g of out) g.items.sort((a,b) => (a.question || "").localeCompare((b.question || ""), "ru"));
-    out.sort((a,b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
+    for (const g of out) {
+      g.items.sort((a, b) => (a.question || "").localeCompare((b.question || ""), "ru"));
+    }
+    out.sort((a, b) => (a.settlement || "").localeCompare((b.settlement || ""), "ru"));
     return out;
   }
 
@@ -317,14 +338,15 @@
     if (!q || !window.turf) return;
 
     const by = new Map();
+
     for (const r of rows) {
       const key = answerKey(r);
       if (!by.has(key)) by.set(key, new Map());
 
       const placeKey = [
-        (r.region||"").toLowerCase().trim(),
-        (r.district||"").toLowerCase().trim(),
-        (r.settlement||"").toLowerCase().trim()
+        (r.region || "").toLowerCase().trim(),
+        (r.district || "").toLowerCase().trim(),
+        (r.settlement || "").toLowerCase().trim()
       ].join("|||");
 
       by.get(key).set(placeKey, r);
@@ -341,8 +363,10 @@
         L.circle([p.lat, p.lon], {
           pane: "areasPane",
           radius: 7000,
-          color, weight: 2,
-          fillColor: color, fillOpacity: 0.12
+          color,
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 0.12
         }).addTo(areasLayer);
         continue;
       }
@@ -370,7 +394,6 @@
     }
   }
 
-  // ===== новая логика фильтрации unit1/unit2 =====
   function rowMatchesAnswerFilters(row, a1, a2) {
     const v1 = (row.unit1 || "").trim();
     const v2 = (row.unit2 || "").trim();
@@ -378,18 +401,16 @@
     const x1 = (a1 || "").trim();
     const x2 = (a2 || "").trim();
 
-    // ничего не задано
     if (!x1 && !x2) return true;
 
-    // задано одно значение -> ищем его в любом из двух unit
     if (x1 && !x2) {
       return v1 === x1 || v2 === x1;
     }
+
     if (!x1 && x2) {
       return v1 === x2 || v2 === x2;
     }
 
-    // заданы два значения -> оба должны присутствовать в паре unit1/unit2
     const vals = [v1, v2];
     return vals.includes(x1) && vals.includes(x2);
   }
@@ -439,6 +460,7 @@
 
     for (const g of groups) {
       let icon;
+
       if (qSelected) {
         const set = new Set(g.items.map(answerKey));
         const one = (set.size === 1) ? Array.from(set)[0] : "(смеш.)";
@@ -449,6 +471,7 @@
       }
 
       const m = L.marker([g.lat, g.lon], { icon }).addTo(markersLayer);
+
       if (g.items.length === 1) m.bindPopup(popupHtmlSingle(g.items[0]));
       else m.bindPopup(popupHtmlForGroup(g));
 
@@ -489,10 +512,7 @@
     fillSelect(els.district, [], "Все районы");
     fillSelect(els.settlement, [], "Все населённые пункты");
 
-    // ВАЖНО: списки ответов наполняем общими значениями из ОБОИХ unit
-    const allAnswers = uniq(
-      ALL.flatMap(x => [x.unit1, x.unit2]).filter(Boolean)
-    );
+    const allAnswers = uniq(ALL.flatMap(x => [x.unit1, x.unit2]).filter(Boolean));
     fillSelect(els.unit1, allAnswers, "Все ответы");
     fillSelect(els.unit2, allAnswers, "Все ответы");
 
@@ -643,10 +663,23 @@
     els.legendPinBase.appendChild(img);
   }
 
-  if (els.add_prepare) els.add_prepare.onclick = () => prepareAdd().catch(e => { setAddStatus("Ошибка"); if (els.add_result) els.add_result.textContent = String(e); });
-  if (els.add_send)    els.add_send.onclick = () => sendAdd().catch(e => { setAddStatus("Ошибка"); if (els.add_result) els.add_result.textContent = String(e); });
+  if (els.add_prepare) {
+    els.add_prepare.onclick = () => prepareAdd().catch(e => {
+      setAddStatus("Ошибка");
+      if (els.add_result) els.add_result.textContent = String(e);
+    });
+  }
+
+  if (els.add_send) {
+    els.add_send.onclick = () => sendAdd().catch(e => {
+      setAddStatus("Ошибка");
+      if (els.add_result) els.add_result.textContent = String(e);
+    });
+  }
 
   loadBoundary();
-  loadData().catch(e => { setStatus("Ошибка загрузки"); console.error(e); });
+  loadData().catch(e => {
+    setStatus("Ошибка загрузки");
+    console.error(e);
+  });
 })();
-
