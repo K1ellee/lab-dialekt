@@ -239,15 +239,10 @@
     return `rgba(${r},${g},${b},${a})`;
   }
 
-  function renderLegendDynamic(keys, colorByKey, showAreas) {
+  function renderLegendDynamic(keys, colorByKey, showAreas, showLegend) {
     if (!els.legendDynamic) return;
     els.legendDynamic.innerHTML = "";
-    if (!keys || !keys.length) return;
-
-    const title = document.createElement("div");
-    title.className = "small";
-    title.innerHTML = "<b>Условные обозначения ответов:</b>";
-    els.legendDynamic.appendChild(title);
+    if (!showLegend || !keys || keys.length <= 1) return;
 
     for (const k of keys) {
       const c = colorByKey[k] || "#377eb8";
@@ -438,7 +433,7 @@
     const uniqQuestions = uniq(rows.map(x => x.question));
     const allowAreas = themeActive && uniqQuestions.length === 1;
 
-    renderLegendDynamic(keys, colorByKey, allowAreas);
+    renderLegendDynamic(keys, colorByKey, allowAreas, themeActive);
     buildAreas(rows, colorByKey, allowAreas);
     if (boundaryLayer) boundaryLayer.bringToFront();
 
@@ -664,3 +659,4 @@
   loadBoundary();
   loadData().catch(e => { setStatus("Ошибка загрузки"); console.error(e); });
 })();
+
